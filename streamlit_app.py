@@ -35,7 +35,7 @@ tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
     "Upload", "Cleaning", "EDA", "Compare", "Modeling", "Explainability", "Export"
 ])
 # -----------------------------
-# Tab 1: Upload (Advanced Pro Edition)
+# Tab 1: Upload (Advanced Pro Edition - Fixed)
 # -----------------------------
 with tab1:
     st.header("Upload & Inspect Datasets")
@@ -115,6 +115,7 @@ with tab1:
                 numeric_cols = df.select_dtypes(include='number').columns
                 categorical_cols = df.select_dtypes(exclude='number').columns
 
+                # Numeric preview
                 if len(numeric_cols) > 0:
                     selected_num = st.selectbox(f"Numeric Column for Histogram ({name})", numeric_cols)
                     st.plotly_chart(
@@ -122,14 +123,23 @@ with tab1:
                         use_container_width=True
                     )
 
+                # Categorical preview (fixed section)
                 if len(categorical_cols) > 0:
                     selected_cat = st.selectbox(f"Categorical Column for Bar Chart ({name})", categorical_cols)
-                    st.plotly_chart(
-                        px.bar(df[selected_cat].value_counts().reset_index(),
-                               x='index', y=selected_cat,
-                               title=f"{name}: Category Counts for {selected_cat}"),
-                        use_container_width=True
-                    )
+                    if selected_cat and df[selected_cat].notna().sum() > 0:
+                        cat_counts = df[selected_cat].value_counts(dropna=False).reset_index()
+                        cat_counts.columns = [selected_cat, "count"]
+                        st.plotly_chart(
+                            px.bar(
+                                cat_counts,
+                                x=selected_cat,
+                                y="count",
+                                title=f"{name}: Category Counts for {selected_cat}",
+                            ),
+                            use_container_width=True
+                        )
+                    else:
+                        st.info(f"No valid categorical data to plot for {selected_cat}.")
 
     # Show previews if datasets are loaded
     preview_dataset(st.session_state.dataset_a, "Dataset A")
@@ -152,6 +162,8 @@ with tab1:
                 st.info("Datasets reloaded from session cache.")
             else:
                 st.error("No datasets in cache to reload.")
+
+
 # -----------------------------
 # Tab 2: Cleaning
 # -----------------------------
