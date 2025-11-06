@@ -500,109 +500,50 @@ with tab5:
 
             else:
                 st.warning("Please select a valid target and features.")
-
-
 # -----------------------------
 # Tab 6: Explainability (Advanced)
 # -----------------------------
 with tab6:
-    st.header("Model Explainability")
+    st.header("Explainability")
 
-    if st.session_state.model is not None and st.session_state.X_test is not None:
-        st.write("Using SHAP to explain model predictions...")
+    if st.session_state.model is not None and hasattr(st.session_state, "X_test"):
+        st.write("Generating feature explainability using SHAP...")
 
-        # Choose top features to display
-        top_n = st.slider("Select number of top features to show", min_value=3, max_value=20, value=10)
-
-        # Determine correct explainer
         try:
             import shap
+
             model = st.session_state.model
             X_test = st.session_state.X_test
 
-            if hasattr(model, "predict_proba"):  # tree-based or classification
+            # Use TreeExplainer for tree-based models, LinearExplainer for linear models
+            if isinstance(model, RandomForestClassifier):
                 explainer = shap.TreeExplainer(model)
-            else:  # fallback for other models
-                explainer = shap.KernelExplainer(model.predict, X_test)
+            else:
+                explainer = shap.LinearExplainer(model, X_test, feature_perturbation="interventional")
 
+            # Compute SHAP values safely
             shap_values = explainer.shap_values(X_test)
 
-            # Global feature importance
-            st.subheader("Global Feature Importance")
-            shap.summary_plot(shap_values, X_test, plot_type="bar", max_display=top_n, show=False)
-            st.pyplot(bbox_inches='tight')
+            st.subheader("SHAP Summary Plot")
+            # For binary classification, shap_values may be a list with 2 arrays
+            if isinstance(shap_values, list):
+                shap_values_to_plot = shap_values[1] if len(shap_values) > 1 else shap_values[0]
+            else:
+                shap_values_to_plot = shap_values
 
-            # Local explanations
-            st.subheader("Local Explanation")
-            row_index = st.number_input("Select test row index", min_value=0, max_value=len(X_test)-1, value=0)
-            st.write(f"Explanation for row {row_index}:")
-            shap.force_plot(explainer.expected_value, shap_values[row_index], X_test.iloc[row_index], matplotlib=True, show=False)
-            st.pyplot(bbox_inches='tight')
+            # Use matplotlib figure and st.pyplot for safer embedding
+            import matplotlib.pyplot as plt
+            plt.figure()
+            shap.summary_plot(shap_values_to_plot, X_test, plot_type="bar", show=False)
+            st.pyplot(plt.gcf())
+            plt.clf()
 
-            # Optional: dependence plot
-            feature_dep = st.selectbox("Select feature for SHAP dependence plot", X_test.columns)
-            shap.dependence_plot(feature_dep, shap_values, X_test, show=False)
-            st.pyplot(bbox_inches='tight')
+            st.success("SHAP explainability generated successfully!")
 
         except Exception as e:
-            st.error(f"Error generating SHAP plots: {e}")
+            st.error(f"Could not generate SHAP explainability: {e}")
+
     else:
-        st.warning("Train a model first and ensure you have a test set.")
-import zipfile
-from datetime import datetime
-import os
+        st.warning("Train a model first to see explainability.")
 
-with tab7:
-    st.header("Export Reports")
-    export_options = st.multiselect(
-        "Select items to export",
-        options=[
-            'Cleaned Dataset A', 'Cleaned Dataset B', 
-            'EDA Reports', 'Compare Report', 
-            'Model Metrics', 'SHAP Plots'
-        ]
-    )
-
-    file_name = st.text_input("Enter export file name", value=f"DataLens_Report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.zip")
-
-    if st.button("Export"):
-        with io.BytesIO() as buffer:
-            with zipfile.ZipFile(buffer, 'w') as zf:
-                # Cleaned datasets
-                if 'Cleaned Dataset A' in export_options and st.session_state.cleaned_a is not None:
-                    csv_bytes = st.session_state.cleaned_a.to_csv(index=False).encode()
-                    zf.writestr("Cleaned_Dataset_A.csv", csv_bytes)
-                if 'Cleaned Dataset B' in export_options and st.session_state.cleaned_b is not None:
-                    csv_bytes = st.session_state.cleaned_b.to_csv(index=False).encode()
-                    zf.writestr("Cleaned_Dataset_B.csv", csv_bytes)
-                
-                # EDA Reports
-                if 'EDA Reports' in export_options:
-                    for suffix in ['a', 'b']:
-                        report = st.session_state.get(f"eda_report_{suffix}")
-                        if report is not None:
-                            zf.writestr(f"EDA_Report_{suffix.upper()}.html", report.to_html())
-                
-                # Compare Report
-                if 'Compare Report' in export_options and st.session_state.compare_report is not None:
-                    csv_bytes = st.session_state.compare_report.to_csv(index=False).encode()
-                    zf.writestr("Compare_Report.csv", csv_bytes)
-                
-                # Model Metrics
-                if 'Model Metrics' in export_options and st.session_state.model_metrics is not None:
-                    csv_bytes = st.session_state.model_metrics.to_csv(index=False).encode()
-                    zf.writestr("Model_Metrics.csv", csv_bytes)
-                
-                # SHAP plots (optional)
-                if 'SHAP Plots' in export_options and st.session_state.shap_plots is not None:
-                    for i, plot_bytes in enumerate(st.session_state.shap_plots):
-                        zf.writestr(f"SHAP_Plot_{i+1}.png", plot_bytes)
-
-            st.download_button(
-                label="Download All Reports",
-                data=buffer.getvalue(),
-                file_name=file_name,
-                mime="application/zip"
-            )
-            st.success(f"Exported {file_name} successfully!")
 
