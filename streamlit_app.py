@@ -132,6 +132,7 @@ with tab4:
     compare_type = st.selectbox("Select Compare Type", [
         'Row presence check', 'Cell-by-cell comparison', 'Summary compare', 'Schema compare'
     ])
+
     if st.button("Run Compare"):
         if st.session_state.cleaned_a is None or st.session_state.cleaned_b is None:
             st.warning("Please run cleaning or upload both datasets first")
@@ -142,17 +143,22 @@ with tab4:
                 only_in_a = ids_a - ids_b
                 only_in_b = ids_b - ids_a
                 report = pd.DataFrame({
-                    'Only in A': list(only_in_a),
-                    'Only in B': list(only_in_b)
+                    'Only in A': list(only_in_a) + [None]*(max(len(only_in_a), len(only_in_b)) - len(only_in_a)),
+                    'Only in B': list(only_in_b) + [None]*(max(len(only_in_a), len(only_in_b)) - len(only_in_b))
                 })
                 st.session_state.compare_report = report
 
             elif compare_type == 'Schema compare':
                 cols_a = set(st.session_state.cleaned_a.columns)
                 cols_b = set(st.session_state.cleaned_b.columns)
+                cols_only_a = list(cols_a - cols_b)
+                cols_only_b = list(cols_b - cols_a)
+                max_len = max(len(cols_only_a), len(cols_only_b))
+                cols_only_a += [None] * (max_len - len(cols_only_a))
+                cols_only_b += [None] * (max_len - len(cols_only_b))
                 report = pd.DataFrame({
-                    'Columns only in A': list(cols_a - cols_b),
-                    'Columns only in B': list(cols_b - cols_a)
+                    'Columns only in A': cols_only_a,
+                    'Columns only in B': cols_only_b
                 })
                 st.session_state.compare_report = report
 
@@ -161,7 +167,7 @@ with tab4:
                 diffs = []
                 for col in common_cols:
                     if pd.api.types.is_numeric_dtype(st.session_state.cleaned_a[col]):
-                        diff_count = (st.session_state.cleaned_a[col].mean() - st.session_state.cleaned_b[col].mean())
+                        diff_count = st.session_state.cleaned_a[col].mean() - st.session_state.cleaned_b[col].mean()
                         diffs.append({'Column': col, 'Mean Difference': diff_count})
                 st.session_state.compare_report = pd.DataFrame(diffs)
 
@@ -170,7 +176,9 @@ with tab4:
                 summary_b = st.session_state.cleaned_b.describe()
                 st.session_state.compare_report = pd.concat([summary_a, summary_b], keys=['Dataset A', 'Dataset B'])
 
-            st.dataframe(st.session_state.compare_report)
+            # Display the compare report if it exists
+            if st.session_state.compare_report is not None:
+                st.dataframe(st.session_state.compare_report)
 
 # -----------------------------
 # Tab 5: Modeling
