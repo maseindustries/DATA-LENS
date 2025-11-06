@@ -165,36 +165,95 @@ with tab1:
 
 
 # -----------------------------
-# Tab 2: Cleaning
+# Tab 2: Cleaning & Preparation (Advanced Pro Edition)
 # -----------------------------
 with tab2:
     st.header("Cleaning & Preparation")
-    if st.button("Run Cleaning"):
-        def clean_dataset(df):
+
+    st.markdown("""
+    Configure how you'd like to clean your datasets.
+    You can choose different strategies for missing values, dates, and outliers.
+    """)
+
+    # --- Cleaning options ---
+    with st.expander("⚙️ Cleaning Options"):
+        missing_strategy = st.selectbox(
+            "Missing Value Strategy",
+            ["Median (numeric) / 'Unknown' (categorical)", "Drop Rows with Missing Values", "Fill with Mean (numeric)"],
+        )
+        handle_outliers = st.checkbox("Clip Outliers to 1st–99th Percentile (numeric columns)", value=True)
+        convert_dates = st.checkbox("Auto-convert Date Columns", value=True)
+        drop_duplicates = st.checkbox("Remove Duplicates", value=True)
+
+    if st.button("🧹 Run Cleaning", use_container_width=True):
+
+        def clean_dataset(df, label):
             if df is None:
+                st.warning(f"No data found for {label}. Please upload first.")
                 return None
+
             df = df.copy()
-            # Handle missing values
+            original_shape = df.shape
+            original_missing = df.isnull().sum().sum()
+
+            # --- Handle missing values ---
             for col in df.columns:
-                if df[col].dtype == 'O':  # object columns
-                    df[col].fillna('Unknown', inplace=True)
+                if df[col].dtype == 'O':
+                    if missing_strategy == "Drop Rows with Missing Values":
+                        df = df[df[col].notna()]
+                    else:
+                        df[col].fillna('Unknown', inplace=True)
                 else:
-                    df[col].fillna(df[col].median(), inplace=True)
-            # Convert dates
-            if 'JoinDate' in df.columns:
-                df['JoinDate'] = pd.to_datetime(df['JoinDate'], errors='coerce')
-                df['JoinDate'].fillna(pd.Timestamp('2000-01-01'), inplace=True)
-            # Remove duplicates
-            df.drop_duplicates(inplace=True)
+                    if missing_strategy == "Drop Rows with Missing Values":
+                        df = df[df[col].notna()]
+                    elif missing_strategy == "Fill with Mean (numeric)":
+                        df[col].fillna(df[col].mean(), inplace=True)
+                    else:
+                        df[col].fillna(df[col].median(), inplace=True)
+
+            # --- Auto-convert dates ---
+            if convert_dates:
+                date_like = [c for c in df.columns if 'date' in c.lower() or 'time' in c.lower()]
+                for c in date_like:
+                    df[c] = pd.to_datetime(df[c], errors='coerce')
+
+            # --- Outlier clipping ---
+            if handle_outliers:
+                num_cols = df.select_dtypes(include='number').columns
+                for c in num_cols:
+                    lower, upper = df[c].quantile(0.01), df[c].quantile(0.99)
+                    df[c] = df[c].clip(lower, upper)
+
+            # --- Remove duplicates ---
+            if drop_duplicates:
+                df.drop_duplicates(inplace=True)
+
+            # --- Summary ---
+            st.success(f"✅ Cleaned {label}")
+            st.markdown(f"**Original shape:** {original_shape[0]} rows × {original_shape[1]} columns")
+            st.markdown(f"**Cleaned shape:** {df.shape[0]} rows × {df.shape[1]} columns")
+            st.markdown(f"**Missing values fixed:** {original_missing - df.isnull().sum().sum()}")
+
+            # --- Quick numeric preview ---
+            numeric_cols = df.select_dtypes(include='number').columns
+            if len(numeric_cols) > 0:
+                with st.expander(f"📊 {label}: Quick Numeric Distribution"):
+                    chosen_num = st.selectbox(f"{label} numeric column", numeric_cols, key=f"dist_{label}")
+                    st.plotly_chart(px.histogram(df, x=chosen_num, nbins=30, title=f"{label}: {chosen_num} Distribution"))
+
             return df
 
-        st.session_state.cleaned_a = clean_dataset(st.session_state.dataset_a)
-        st.session_state.cleaned_b = clean_dataset(st.session_state.dataset_b)
+        # Run cleaning for both datasets
+        st.session_state.cleaned_a = clean_dataset(st.session_state.dataset_a, "Dataset A")
+        st.session_state.cleaned_b = clean_dataset(st.session_state.dataset_b, "Dataset B")
 
-        st.write("Preview of cleaned Dataset A:")
-        st.dataframe(st.session_state.cleaned_a.head() if st.session_state.cleaned_a is not None else "No data")
-        st.write("Preview of cleaned Dataset B:")
-        st.dataframe(st.session_state.cleaned_b.head() if st.session_state.cleaned_b is not None else "No data")
+        # --- Show previews ---
+        st.markdown("### 🧾 Cleaned Dataset Previews")
+        if st.session_state.cleaned_a is not None:
+            st.dataframe(st.session_state.cleaned_a.head())
+        if st.session_state.cleaned_b is not None:
+            st.dataframe(st.session_state.cleaned_b.head())
+
 
 # -----------------------------
 # Tab 3: EDA
