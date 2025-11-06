@@ -318,16 +318,15 @@ with tab3:
         display_eda(st.session_state.cleaned_a, "Dataset A", "a")
         display_eda(st.session_state.cleaned_b, "Dataset B", "b")
 # -----------------------------
-# Tab 4: Compare & Contrast (Advanced & Robust)
+# Tab 4: Compare & Contrast (Robust)
 # -----------------------------
 with tab4:
     st.header("Compare & Contrast")
 
-    # Ensure we have datasets
+    # Ensure datasets exist
     if st.session_state.cleaned_a is None or st.session_state.cleaned_b is None:
         st.warning("Please run cleaning or upload both datasets first")
     else:
-        # Determine common columns dynamically
         common_cols = list(set(st.session_state.cleaned_a.columns).intersection(
             st.session_state.cleaned_b.columns))
 
@@ -335,7 +334,6 @@ with tab4:
             'Row presence check', 'Cell-by-cell comparison', 'Summary compare', 'Schema compare'
         ])
 
-        # Optional key column for row presence check
         key_col = None
         if compare_type == 'Row presence check' and common_cols:
             key_col = st.selectbox("Select key column for row matching (optional)", common_cols)
@@ -381,7 +379,6 @@ with tab4:
             elif compare_type == 'Cell-by-cell comparison':
                 diffs = []
 
-                # Align indices to prevent ValueError
                 max_len = max(len(st.session_state.cleaned_a), len(st.session_state.cleaned_b))
                 df_a = st.session_state.cleaned_a.reindex(range(max_len))
                 df_b = st.session_state.cleaned_b.reindex(range(max_len))
@@ -390,40 +387,27 @@ with tab4:
                     col_a = df_a[col]
                     col_b = df_b[col]
 
-                    # Numeric comparison
                     if pd.api.types.is_numeric_dtype(col_a):
                         mean_diff = col_a.mean(skipna=True) - col_b.mean(skipna=True)
-                        diff_count = (col_a != col_b).sum()  # NaNs treated as differences
-                        diffs.append({
-                            'Column': col,
-                            'Mean Difference': mean_diff,
-                            'Count Differences': diff_count
-                        })
+                        diff_count = ((col_a != col_b) & (~col_a.isna()) & (~col_b.isna())).sum()
+                        diffs.append({'Column': col, 'Mean Difference': mean_diff, 'Count Differences': diff_count})
                     else:
-                        # Categorical comparison
-                        mismatches = (col_a != col_b).sum()
-                        diffs.append({
-                            'Column': col,
-                            'Mismatched Count': mismatches
-                        })
+                        mismatches = ((col_a != col_b) & (~col_a.isna()) & (~col_b.isna())).sum()
+                        diffs.append({'Column': col, 'Mismatched Count': mismatches})
 
                 report = pd.DataFrame(diffs)
 
             # -----------------------------
             # Summary comparison
             # -----------------------------
-            else:  # Summary compare
+            else:
                 summary_a = st.session_state.cleaned_a.describe(include='all')
                 summary_b = st.session_state.cleaned_b.describe(include='all')
                 report = pd.concat([summary_a, summary_b], keys=['Dataset A', 'Dataset B'])
 
-            # -----------------------------
-            # Display & export report
-            # -----------------------------
             if report is not None:
                 st.session_state.compare_report = report
                 st.dataframe(report)
-
                 buffer = io.BytesIO()
                 report.to_excel(buffer, index=True)
                 st.download_button(
@@ -432,8 +416,9 @@ with tab4:
                     file_name="comparison_report.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                 )
+
 # -----------------------------
-# Tab 5: Modeling (Advanced)
+# Tab 5: Modeling & Prediction (Advanced)
 # -----------------------------
 with tab5:
     st.header("Modeling & Prediction")
@@ -473,7 +458,6 @@ with tab5:
                 y_pred = model.predict(X_test)
 
                 # Metrics
-                from sklearn.metrics import confusion_matrix, classification_report
                 acc = accuracy_score(y_test, y_pred)
                 rmse = mean_squared_error(y_test, y_pred, squared=False)
                 st.session_state.model_metrics = pd.DataFrame({'Metric': ['Accuracy', 'RMSE'], 'Value': [acc, rmse]})
@@ -500,50 +484,55 @@ with tab5:
 
             else:
                 st.warning("Please select a valid target and features.")
+
 # -----------------------------
-# Tab 6: Explainability (Advanced)
+# Tab 6: Explainability
 # -----------------------------
 with tab6:
     st.header("Explainability")
-
-    if st.session_state.model is not None and hasattr(st.session_state, "X_test"):
-        st.write("Generating feature explainability using SHAP...")
-
-        try:
+    if st.button("Show Explainability"):
+        if st.session_state.model is not None:
             import shap
+            explainer = shap.TreeExplainer(st.session_state.model)
+            shap_values = explainer.shap_values(st.session_state.X_test)
 
-            model = st.session_state.model
-            X_test = st.session_state.X_test
+            st.write("Feature Importance (SHAP):")
+            shap.summary_plot(shap_values, st.session_state.X_test, plot_type="bar", show=False)
+            st.pyplot(bbox_inches='tight')
+        else:
+            st.warning("Train a model first.")
 
-            # Use TreeExplainer for tree-based models, LinearExplainer for linear models
-            if isinstance(model, RandomForestClassifier):
-                explainer = shap.TreeExplainer(model)
-            else:
-                explainer = shap.LinearExplainer(model, X_test, feature_perturbation="interventional")
+# -----------------------------
+# Tab 7: Export
+# -----------------------------
+with tab7:
+    st.header("Export Reports")
+    export_options = st.multiselect(
+        "Select items to export",
+        options=['Cleaned Dataset A', 'Cleaned Dataset B', 'EDA Reports', 'Compare Report', 'Model Metrics', 'SHAP Plots']
+    )
+    file_name = st.text_input("Enter export file name", value="DataLens_Report.xlsx")
 
-            # Compute SHAP values safely
-            shap_values = explainer.shap_values(X_test)
+    if st.button("Export"):
+        with io.BytesIO() as output:
+            with pd.ExcelWriter(output, engine='openpyxl') as writer:
+                if 'Cleaned Dataset A' in export_options and st.session_state.cleaned_a is not None:
+                    st.session_state.cleaned_a.to_excel(writer, sheet_name='Cleaned A', index=False)
+                if 'Cleaned Dataset B' in export_options and st.session_state.cleaned_b is not None:
+                    st.session_state.cleaned_b.to_excel(writer, sheet_name='Cleaned B', index=False)
+                if 'Compare Report' in export_options and st.session_state.compare_report is not None:
+                    st.session_state.compare_report.to_excel(writer, sheet_name='Compare', index=True)
+                if 'Model Metrics' in export_options and st.session_state.model_metrics is not None:
+                    st.session_state.model_metrics.to_excel(writer, sheet_name='Model Metrics', index=False)
+                # SHAP plots could be saved as images and added to Excel if needed
+            data = output.getvalue()
+            st.download_button(
+                label="Download Excel Report",
+                data=data,
+                file_name=file_name,
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )
+            st.success(f"Exported {file_name} successfully!")
 
-            st.subheader("SHAP Summary Plot")
-            # For binary classification, shap_values may be a list with 2 arrays
-            if isinstance(shap_values, list):
-                shap_values_to_plot = shap_values[1] if len(shap_values) > 1 else shap_values[0]
-            else:
-                shap_values_to_plot = shap_values
-
-            # Use matplotlib figure and st.pyplot for safer embedding
-            import matplotlib.pyplot as plt
-            plt.figure()
-            shap.summary_plot(shap_values_to_plot, X_test, plot_type="bar", show=False)
-            st.pyplot(plt.gcf())
-            plt.clf()
-
-            st.success("SHAP explainability generated successfully!")
-
-        except Exception as e:
-            st.error(f"Could not generate SHAP explainability: {e}")
-
-    else:
-        st.warning("Train a model first to see explainability.")
 
 
