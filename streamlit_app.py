@@ -34,37 +34,124 @@ st.title("DataLens — Advanced Analytics Tool")
 tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
     "Upload", "Cleaning", "EDA", "Compare", "Modeling", "Explainability", "Export"
 ])
-
 # -----------------------------
-# Tab 1: Upload
+# Tab 1: Upload (Advanced Pro Edition)
 # -----------------------------
 with tab1:
-    st.header("Upload Datasets")
-    dataset_a_file = st.file_uploader("Upload Dataset A", type=['csv', 'xlsx'])
-    dataset_b_file = st.file_uploader("Upload Dataset B", type=['csv', 'xlsx'])
+    st.header("Upload & Inspect Datasets")
 
-    if st.button("Load Datasets"):
+    # File uploaders
+    dataset_a_file = st.file_uploader("Upload Dataset A", type=['csv', 'xlsx', 'parquet', 'json'])
+    dataset_b_file = st.file_uploader("Upload Dataset B", type=['csv', 'xlsx', 'parquet', 'json'])
+
+    # Display file details
+    def show_file_details(file, label):
+        if file:
+            file_details = {
+                "Filename": file.name,
+                "Type": file.type or "N/A",
+                "Size (KB)": round(file.size / 1024, 2)
+            }
+            st.markdown(f"**{label} Details:**")
+            st.json(file_details)
+
+    show_file_details(dataset_a_file, "Dataset A")
+    show_file_details(dataset_b_file, "Dataset B")
+
+    # Load datasets
+    if st.button("Load Datasets", use_container_width=True):
         try:
-            if dataset_a_file is not None:
-                st.session_state.dataset_a = (
-                    pd.read_csv(dataset_a_file) if dataset_a_file.name.endswith('.csv') else pd.read_excel(dataset_a_file)
-                )
-            if dataset_b_file is not None:
-                st.session_state.dataset_b = (
-                    pd.read_csv(dataset_b_file) if dataset_b_file.name.endswith('.csv') else pd.read_excel(dataset_b_file)
-                )
-            st.success("Datasets loaded successfully!")
+            def load_file(file):
+                if file.name.endswith('.csv'):
+                    return pd.read_csv(file)
+                elif file.name.endswith('.xlsx'):
+                    return pd.read_excel(file)
+                elif file.name.endswith('.parquet'):
+                    return pd.read_parquet(file)
+                elif file.name.endswith('.json'):
+                    return pd.read_json(file)
+                else:
+                    st.warning(f"Unsupported file type: {file.name}")
+                    return None
 
-            if st.session_state.dataset_a is not None:
-                st.subheader("Dataset A Preview")
-                st.dataframe(st.session_state.dataset_a.head())
-            if st.session_state.dataset_b is not None:
-                st.subheader("Dataset B Preview")
-                st.dataframe(st.session_state.dataset_b.head())
+            if dataset_a_file:
+                st.session_state.dataset_a = load_file(dataset_a_file)
+            if dataset_b_file:
+                st.session_state.dataset_b = load_file(dataset_b_file)
+
+            st.success("✅ Datasets loaded successfully!")
 
         except Exception as e:
             st.error(f"Error loading datasets: {e}")
 
+    # Utility function to preview datasets safely
+    def preview_dataset(df, name):
+        if df is not None:
+            st.subheader(f"{name} Preview")
+
+            # Smart sampling for large datasets
+            max_rows = 10000
+            if len(df) > max_rows:
+                st.info(f"Dataset too large ({len(df)} rows). Showing first {max_rows} rows.")
+                df = df.sample(max_rows, random_state=42)
+
+            # Basic info
+            st.markdown(f"**Shape:** {df.shape[0]} rows × {df.shape[1]} columns")
+            st.markdown(f"**Missing Values:** {df.isnull().sum().sum()}")
+            st.dataframe(df.head())
+
+            # Column selection
+            with st.expander(f"🔍 Configure Columns for {name}"):
+                columns = df.columns.tolist()
+                st.session_state[f"target_{name.lower()}"] = st.selectbox(
+                    "Select Target Column (if applicable)", [None] + columns, key=f"target_{name}"
+                )
+                st.session_state[f"id_{name.lower()}"] = st.selectbox(
+                    "Select ID Column (optional)", [None] + columns, key=f"id_{name}"
+                )
+
+            # Quick data preview plots
+            with st.expander(f"📊 Quick Visuals for {name}"):
+                numeric_cols = df.select_dtypes(include='number').columns
+                categorical_cols = df.select_dtypes(exclude='number').columns
+
+                if len(numeric_cols) > 0:
+                    selected_num = st.selectbox(f"Numeric Column for Histogram ({name})", numeric_cols)
+                    st.plotly_chart(
+                        px.histogram(df, x=selected_num, nbins=30, title=f"{name}: Distribution of {selected_num}"),
+                        use_container_width=True
+                    )
+
+                if len(categorical_cols) > 0:
+                    selected_cat = st.selectbox(f"Categorical Column for Bar Chart ({name})", categorical_cols)
+                    st.plotly_chart(
+                        px.bar(df[selected_cat].value_counts().reset_index(),
+                               x='index', y=selected_cat,
+                               title=f"{name}: Category Counts for {selected_cat}"),
+                        use_container_width=True
+                    )
+
+    # Show previews if datasets are loaded
+    preview_dataset(st.session_state.dataset_a, "Dataset A")
+    preview_dataset(st.session_state.dataset_b, "Dataset B")
+
+    # Management tools
+    st.markdown("---")
+    st.subheader("🧹 Dataset Management")
+    col1, col2 = st.columns(2)
+
+    with col1:
+        if st.button("Clear Datasets"):
+            for key in ["dataset_a", "dataset_b", "cleaned_a", "cleaned_b", "eda_report_a", "eda_report_b"]:
+                st.session_state[key] = None
+            st.warning("Datasets cleared from session.")
+
+    with col2:
+        if st.button("Reload Last Datasets"):
+            if st.session_state.dataset_a is not None or st.session_state.dataset_b is not None:
+                st.info("Datasets reloaded from session cache.")
+            else:
+                st.error("No datasets in cache to reload.")
 # -----------------------------
 # Tab 2: Cleaning
 # -----------------------------
