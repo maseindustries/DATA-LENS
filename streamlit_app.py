@@ -256,29 +256,65 @@ with tab2:
 
 
 # -----------------------------
-# Tab 3: EDA
+# Tab 3: EDA (Advanced Pro Edition)
 # -----------------------------
 with tab3:
     st.header("Exploratory Data Analysis")
-    if st.button("Run EDA"):
-        st.write("EDA: Summary stats, histograms, and profiling")
 
-        def display_eda(dataset, name, key_prefix):
-            if dataset is not None:
-                st.write(f"{name} Summary")
-                st.dataframe(dataset.describe(include='all'))
+    run_eda = st.button("Run EDA", use_container_width=True)
+    lazy_profiling = st.checkbox("Generate full profiling report (may be slow)", value=False)
 
-                numeric_cols = dataset.select_dtypes(include='number').columns
-                if len(numeric_cols) > 0:
-                    for i, col in enumerate(numeric_cols[:5]):  # limit to 5 charts
-                        fig = px.histogram(dataset, x=col, title=f"Histogram of {col}")
-                        st.plotly_chart(fig, key=f"{key_prefix}_{i}")
+    def display_eda(dataset, name, key_prefix):
+        if dataset is None:
+            st.warning(f"No cleaned dataset available for {name}.")
+            return
 
-                # Automated profiling
-                profile = ProfileReport(dataset, title=f"{name} Profiling Report", explorative=True)
-                st.session_state[f"eda_report_{key_prefix}"] = profile
-                st.write(profile.to_html(), unsafe_allow_html=True)
+        st.subheader(f"{name} Summary")
+        st.dataframe(dataset.describe(include='all'))
 
+        numeric_cols = dataset.select_dtypes(include='number').columns
+        categorical_cols = dataset.select_dtypes(exclude='number').columns
+
+        # --- Numeric Histograms ---
+        if len(numeric_cols) > 0:
+            st.markdown(f"**Numeric Columns:** {', '.join(numeric_cols)}")
+            selected_nums = st.multiselect(f"Select numeric columns for histogram ({name})", numeric_cols, default=numeric_cols[:5])
+            for i, col in enumerate(selected_nums):
+                fig = px.histogram(dataset, x=col, title=f"{name}: Histogram of {col}")
+                st.plotly_chart(fig, key=f"{key_prefix}_num_{i}")
+
+        # --- Categorical Bar Charts ---
+        if len(categorical_cols) > 0:
+            st.markdown(f"**Categorical Columns:** {', '.join(categorical_cols)}")
+            selected_cats = st.multiselect(f"Select categorical columns for bar chart ({name})", categorical_cols, default=categorical_cols[:3])
+            for i, col in enumerate(selected_cats):
+                counts = dataset[col].value_counts(dropna=False).reset_index()
+                counts.columns = [col, "count"]
+                fig = px.bar(counts, x=col, y="count", title=f"{name}: Category Counts for {col}")
+                st.plotly_chart(fig, key=f"{key_prefix}_cat_{i}")
+
+        # --- Correlation heatmap ---
+        if len(numeric_cols) > 1:
+            corr = dataset[numeric_cols].corr()
+            fig = px.imshow(corr, text_auto=True, title=f"{name}: Correlation Heatmap")
+            st.plotly_chart(fig, key=f"{key_prefix}_corr")
+
+        # --- Missing data overview ---
+        missing = dataset.isnull().sum()
+        if missing.sum() > 0:
+            st.markdown(f"**Missing Values Overview ({name}):**")
+            missing_df = missing[missing > 0].reset_index()
+            missing_df.columns = ["Column", "MissingCount"]
+            st.dataframe(missing_df)
+
+        # --- Automated profiling (lazy) ---
+        if lazy_profiling:
+            st.markdown(f"**Generating full profiling report for {name}...**")
+            profile = ProfileReport(dataset, title=f"{name} Profiling Report", explorative=True)
+            st.session_state[f"eda_report_{key_prefix}"] = profile
+            st.write(profile.to_html(), unsafe_allow_html=True)
+
+    if run_eda:
         display_eda(st.session_state.cleaned_a, "Dataset A", "a")
         display_eda(st.session_state.cleaned_b, "Dataset B", "b")
 
