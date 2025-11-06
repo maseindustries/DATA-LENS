@@ -2,15 +2,9 @@ streamlit
 pandas
 numpy
 plotly
-ydata-profiling==4.6.0
+ydata-profiling
 scikit-learn
 shap
 openpyxl
 tqdm
 setuptools
-jinja2
-matplotlib
-htmlmin
-phik
-tangled-up-in-unicode
-visions
