@@ -254,69 +254,56 @@ with tab2:
         if st.session_state.cleaned_b is not None:
             st.dataframe(st.session_state.cleaned_b.head())
 
-
 # -----------------------------
-# Tab 3: EDA (Advanced Pro Edition)
+# Tab 3: EDA Visualization (Dynamic)
 # -----------------------------
 with tab3:
-    st.header("Exploratory Data Analysis")
+    st.header("Exploratory Data Analysis (Visualization)")
 
-    run_eda = st.button("Run EDA", use_container_width=True)
-    lazy_profiling = st.checkbox("Generate full profiling report (may be slow)", value=False)
+    if st.session_state.cleaned_a is not None:
+        df = st.session_state.cleaned_a
 
-    def display_eda(dataset, name, key_prefix):
-        if dataset is None:
-            st.warning(f"No cleaned dataset available for {name}.")
-            return
+        chart_type = st.selectbox(
+            "Select chart type",
+            ["Histogram", "Boxplot", "Scatter Plot", "Correlation Heatmap", "Countplot (Categorical)"]
+        )
 
-        st.subheader(f"{name} Summary")
-        st.dataframe(dataset.describe(include='all'))
+        if chart_type == "Histogram":
+            col = st.selectbox("Select column for Histogram", df.columns)
+            bins = st.slider("Number of bins", 5, 100, 20)
+            fig = px.histogram(df, x=col, nbins=bins, title=f"Histogram of {col}")
+            st.plotly_chart(fig)
 
-        numeric_cols = dataset.select_dtypes(include='number').columns
-        categorical_cols = dataset.select_dtypes(exclude='number').columns
+        elif chart_type == "Boxplot":
+            col = st.selectbox("Select column for Boxplot", df.columns)
+            fig = px.box(df, y=col, title=f"Boxplot of {col}")
+            st.plotly_chart(fig)
 
-        # --- Numeric Histograms ---
-        if len(numeric_cols) > 0:
-            st.markdown(f"**Numeric Columns:** {', '.join(numeric_cols)}")
-            selected_nums = st.multiselect(f"Select numeric columns for histogram ({name})", numeric_cols, default=numeric_cols[:5])
-            for i, col in enumerate(selected_nums):
-                fig = px.histogram(dataset, x=col, title=f"{name}: Histogram of {col}")
-                st.plotly_chart(fig, key=f"{key_prefix}_num_{i}")
+        elif chart_type == "Scatter Plot":
+            x_col = st.selectbox("X-axis", df.columns, key="scatter_x")
+            y_col = st.selectbox("Y-axis", df.columns, key="scatter_y")
+            color_col = st.selectbox("Color by (optional)", [None] + list(df.columns))
+            fig = px.scatter(df, x=x_col, y=y_col, color=color_col, title=f"{y_col} vs {x_col}")
+            st.plotly_chart(fig)
 
-        # --- Categorical Bar Charts ---
-        if len(categorical_cols) > 0:
-            st.markdown(f"**Categorical Columns:** {', '.join(categorical_cols)}")
-            selected_cats = st.multiselect(f"Select categorical columns for bar chart ({name})", categorical_cols, default=categorical_cols[:3])
-            for i, col in enumerate(selected_cats):
-                counts = dataset[col].value_counts(dropna=False).reset_index()
-                counts.columns = [col, "count"]
-                fig = px.bar(counts, x=col, y="count", title=f"{name}: Category Counts for {col}")
-                st.plotly_chart(fig, key=f"{key_prefix}_cat_{i}")
+        elif chart_type == "Correlation Heatmap":
+            numeric_df = df.select_dtypes(include='number')
+            if numeric_df.shape[1] < 2:
+                st.info("Need at least two numeric columns for correlation heatmap")
+            else:
+                corr = numeric_df.corr()
+                fig = px.imshow(corr, text_auto=True, color_continuous_scale='RdBu_r', title="Correlation Heatmap")
+                st.plotly_chart(fig)
 
-        # --- Correlation heatmap ---
-        if len(numeric_cols) > 1:
-            corr = dataset[numeric_cols].corr()
-            fig = px.imshow(corr, text_auto=True, title=f"{name}: Correlation Heatmap")
-            st.plotly_chart(fig, key=f"{key_prefix}_corr")
-
-        # --- Missing data overview ---
-        missing = dataset.isnull().sum()
-        if missing.sum() > 0:
-            st.markdown(f"**Missing Values Overview ({name}):**")
-            missing_df = missing[missing > 0].reset_index()
-            missing_df.columns = ["Column", "MissingCount"]
-            st.dataframe(missing_df)
-
-        # --- Automated profiling (lazy) ---
-        if lazy_profiling:
-            st.markdown(f"**Generating full profiling report for {name}...**")
-            profile = ProfileReport(dataset, title=f"{name} Profiling Report", explorative=True)
-            st.session_state[f"eda_report_{key_prefix}"] = profile
-            st.write(profile.to_html(), unsafe_allow_html=True)
-
-    if run_eda:
-        display_eda(st.session_state.cleaned_a, "Dataset A", "a")
-        display_eda(st.session_state.cleaned_b, "Dataset B", "b")
+        elif chart_type == "Countplot (Categorical)":
+            cat_cols = df.select_dtypes(include='object').columns
+            if len(cat_cols) == 0:
+                st.info("No categorical columns found")
+            else:
+                col = st.selectbox("Select categorical column", cat_cols)
+                fig = px.histogram(df, x=col, title=f"Countplot of {col}")
+                st.plotly_chart(fig)
+                
 # -----------------------------
 # Tab 4: Compare & Contrast (Robust)
 # -----------------------------
