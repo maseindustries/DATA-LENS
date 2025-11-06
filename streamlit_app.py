@@ -255,54 +255,110 @@ with tab2:
             st.dataframe(st.session_state.cleaned_b.head())
 
 # -----------------------------
-# Tab 3: EDA Visualization (Dynamic)
+# Tab 3: Quick EDA & Visualization (Enhanced)
 # -----------------------------
 with tab3:
-    st.header("Exploratory Data Analysis (Visualization)")
+    st.header("Quick EDA & Visualization")
 
-    if st.session_state.cleaned_a is not None:
-        df = st.session_state.cleaned_a
+    if st.session_state.cleaned_a is None:
+        st.warning("Please upload and clean Dataset A first.")
+    else:
+        df = st.session_state.cleaned_a.copy()
 
+        # -----------------------------
+        # Data filtering
+        # -----------------------------
+        st.subheader("Filter Data (optional)")
+        filter_cols = st.multiselect("Select columns to filter", df.columns)
+        for col in filter_cols:
+            if pd.api.types.is_numeric_dtype(df[col]):
+                min_val, max_val = st.slider(
+                    f"Filter {col}", float(df[col].min()), float(df[col].max()), (float(df[col].min()), float(df[col].max()))
+                )
+                df = df[(df[col] >= min_val) & (df[col] <= max_val)]
+            else:
+                selected_vals = st.multiselect(f"Filter {col}", df[col].unique())
+                if selected_vals:
+                    df = df[df[col].isin(selected_vals)]
+
+        # -----------------------------
+        # Select chart type
+        # -----------------------------
         chart_type = st.selectbox(
             "Select chart type",
             ["Histogram", "Boxplot", "Scatter Plot", "Correlation Heatmap", "Countplot (Categorical)"]
         )
 
+        # -----------------------------
+        # Histogram
+        # -----------------------------
         if chart_type == "Histogram":
-            col = st.selectbox("Select column for Histogram", df.columns)
-            bins = st.slider("Number of bins", 5, 100, 20)
-            fig = px.histogram(df, x=col, nbins=bins, title=f"Histogram of {col}")
-            st.plotly_chart(fig)
+            numeric_cols = df.select_dtypes(include='number').columns
+            if len(numeric_cols) == 0:
+                st.info("No numeric columns found for histogram.")
+            else:
+                col = st.selectbox("Select column for Histogram", numeric_cols)
+                bins = st.slider("Number of bins", 5, 100, 20)
+                color_col = st.selectbox("Color by (optional)", [None] + list(df.columns))
+                fig = px.histogram(df, x=col, nbins=bins, color=color_col, title=f"Histogram of {col}")
+                st.plotly_chart(fig)
 
+        # -----------------------------
+        # Boxplot
+        # -----------------------------
         elif chart_type == "Boxplot":
-            col = st.selectbox("Select column for Boxplot", df.columns)
-            fig = px.box(df, y=col, title=f"Boxplot of {col}")
-            st.plotly_chart(fig)
+            numeric_cols = df.select_dtypes(include='number').columns
+            if len(numeric_cols) == 0:
+                st.info("No numeric columns found for boxplot.")
+            else:
+                y_col = st.selectbox("Select numeric column", numeric_cols)
+                x_col = st.selectbox("Group by (optional)", [None] + list(df.columns))
+                fig = px.box(df, y=y_col, x=x_col, points="all", title=f"Boxplot of {y_col}")
+                st.plotly_chart(fig)
 
+        # -----------------------------
+        # Scatter Plot
+        # -----------------------------
         elif chart_type == "Scatter Plot":
-            x_col = st.selectbox("X-axis", df.columns, key="scatter_x")
-            y_col = st.selectbox("Y-axis", df.columns, key="scatter_y")
-            color_col = st.selectbox("Color by (optional)", [None] + list(df.columns))
-            fig = px.scatter(df, x=x_col, y=y_col, color=color_col, title=f"{y_col} vs {x_col}")
-            st.plotly_chart(fig)
+            numeric_cols = df.select_dtypes(include='number').columns
+            if len(numeric_cols) < 2:
+                st.info("Need at least two numeric columns for scatter plot.")
+            else:
+                x_col = st.selectbox("X-axis", numeric_cols, key="scatter_x")
+                y_col = st.selectbox("Y-axis", numeric_cols, key="scatter_y")
+                color_col = st.selectbox("Color by (optional)", [None] + list(df.columns))
+                size_col = st.selectbox("Size by (optional)", [None] + list(df.columns))
+                fig = px.scatter(df, x=x_col, y=y_col, color=color_col, size=size_col,
+                                 title=f"{y_col} vs {x_col}")
+                st.plotly_chart(fig)
 
+        # -----------------------------
+        # Correlation Heatmap
+        # -----------------------------
         elif chart_type == "Correlation Heatmap":
             numeric_df = df.select_dtypes(include='number')
             if numeric_df.shape[1] < 2:
-                st.info("Need at least two numeric columns for correlation heatmap")
+                st.info("Need at least two numeric columns for correlation heatmap.")
             else:
                 corr = numeric_df.corr()
-                fig = px.imshow(corr, text_auto=True, color_continuous_scale='RdBu_r', title="Correlation Heatmap")
+                fig = px.imshow(
+                    corr, text_auto=True, color_continuous_scale='RdBu_r', title="Correlation Heatmap"
+                )
                 st.plotly_chart(fig)
 
+        # -----------------------------
+        # Countplot (Categorical)
+        # -----------------------------
         elif chart_type == "Countplot (Categorical)":
             cat_cols = df.select_dtypes(include='object').columns
             if len(cat_cols) == 0:
-                st.info("No categorical columns found")
+                st.info("No categorical columns found for countplot.")
             else:
                 col = st.selectbox("Select categorical column", cat_cols)
-                fig = px.histogram(df, x=col, title=f"Countplot of {col}")
+                color_col = st.selectbox("Color by (optional)", [None] + list(df.columns))
+                fig = px.histogram(df, x=col, color=color_col, title=f"Countplot of {col}")
                 st.plotly_chart(fig)
+
                 
 # -----------------------------
 # Tab 4: Compare & Contrast (Robust)
