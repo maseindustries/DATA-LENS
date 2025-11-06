@@ -10,3 +10,7 @@ tqdm
 setuptools
 jinja2
 matplotlib
+htmlmin
+phik
+tangled-up-in-unicode
+visions
