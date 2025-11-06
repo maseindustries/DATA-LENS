@@ -471,18 +471,51 @@ with tab5:
 
 
 # -----------------------------
-# Tab 6: Explainability
+# Tab 6: Explainability (Advanced)
 # -----------------------------
 with tab6:
-    st.header("Explainability")
-    if st.button("Show Explainability"):
-        if st.session_state.model is not None:
-            explainer = shap.TreeExplainer(st.session_state.model)
-            shap_values = explainer.shap_values(st.session_state.X_test)
-            st.write("Feature Importance (SHAP):")
-            shap.summary_plot(shap_values, st.session_state.X_test, plot_type="bar")
-        else:
-            st.warning("Train a model first.")
+    st.header("Model Explainability")
+
+    if st.session_state.model is not None and st.session_state.X_test is not None:
+        st.write("Using SHAP to explain model predictions...")
+
+        # Choose top features to display
+        top_n = st.slider("Select number of top features to show", min_value=3, max_value=20, value=10)
+
+        # Determine correct explainer
+        try:
+            import shap
+            model = st.session_state.model
+            X_test = st.session_state.X_test
+
+            if hasattr(model, "predict_proba"):  # tree-based or classification
+                explainer = shap.TreeExplainer(model)
+            else:  # fallback for other models
+                explainer = shap.KernelExplainer(model.predict, X_test)
+
+            shap_values = explainer.shap_values(X_test)
+
+            # Global feature importance
+            st.subheader("Global Feature Importance")
+            shap.summary_plot(shap_values, X_test, plot_type="bar", max_display=top_n, show=False)
+            st.pyplot(bbox_inches='tight')
+
+            # Local explanations
+            st.subheader("Local Explanation")
+            row_index = st.number_input("Select test row index", min_value=0, max_value=len(X_test)-1, value=0)
+            st.write(f"Explanation for row {row_index}:")
+            shap.force_plot(explainer.expected_value, shap_values[row_index], X_test.iloc[row_index], matplotlib=True, show=False)
+            st.pyplot(bbox_inches='tight')
+
+            # Optional: dependence plot
+            feature_dep = st.selectbox("Select feature for SHAP dependence plot", X_test.columns)
+            shap.dependence_plot(feature_dep, shap_values, X_test, show=False)
+            st.pyplot(bbox_inches='tight')
+
+        except Exception as e:
+            st.error(f"Error generating SHAP plots: {e}")
+    else:
+        st.warning("Train a model first and ensure you have a test set.")
 
 # -----------------------------
 # Tab 7: Export
