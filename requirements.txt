@@ -5,6 +5,6 @@ plotly
 ydata-profiling
 scikit-learn
 shap
-rapidfuzz
 openpyxl
 tqdm
+setuptools
