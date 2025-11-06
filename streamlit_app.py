@@ -53,22 +53,79 @@ with tab1:
         st.dataframe(st.session_state.cleaned_b.head())
 
 # -----------------------------
-# Tab 2: EDA
+# Tab 2: EDA (Flexible & Multi-Dataset)
 # -----------------------------
 with tab2:
-    st.header("Exploratory Data Analysis")
-    dataset_choice = st.selectbox("Select dataset for EDA", ["Dataset A","Dataset B"])
-    df = st.session_state.cleaned_a if dataset_choice=="Dataset A" else st.session_state.cleaned_b
+    st.header("Exploratory Data Analysis (EDA)")
 
-    if df is not None:
-        st.subheader("Basic Stats")
-        st.dataframe(df.describe(include='all'))
+    # -----------------------------
+    # Dataset selection
+    # -----------------------------
+    datasets_choice = st.multiselect(
+        "Select dataset(s) for EDA",
+        ["Dataset A", "Dataset B"],
+        default=["Dataset A"]
+    )
 
-        if st.checkbox("Show Pivot Table"):
-            index_col = st.selectbox("Select index", df.columns)
-            value_col = st.selectbox("Select values", df.columns)
-            pivot = pd.pivot_table(df, index=index_col, values=value_col, aggfunc='mean')
-            st.dataframe(pivot)
+    # Ensure at least one dataset is selected
+    if not datasets_choice:
+        st.warning("Please select at least one dataset to analyze.")
+    else:
+        # -----------------------------
+        # Loop through selected datasets
+        # -----------------------------
+        for ds in datasets_choice:
+            df = st.session_state.cleaned_a if ds == "Dataset A" else st.session_state.cleaned_b
+            if df is None:
+                st.info(f"{ds} is not available. Please upload or clean the dataset first.")
+                continue
+
+            st.subheader(f"EDA for {ds}")
+
+            # -----------------------------
+            # Summary statistics
+            # -----------------------------
+            st.write("**Summary Statistics:**")
+            st.dataframe(df.describe(include='all'))
+
+            # -----------------------------
+            # Column type counts
+            # -----------------------------
+            st.write("**Column Types:**")
+            col_types = pd.DataFrame({
+                "Column": df.columns,
+                "Type": [df[col].dtype for col in df.columns],
+                "Missing Values": [df[col].isna().sum() for col in df.columns]
+            })
+            st.dataframe(col_types)
+
+            # -----------------------------
+            # Pivot table option
+            # -----------------------------
+            st.write("**Pivot Table:**")
+            numeric_cols = df.select_dtypes(include=['number']).columns.tolist()
+            categorical_cols = df.select_dtypes(include=['object', 'category']).columns.tolist()
+
+            pivot_index = st.selectbox(f"{ds} - Select pivot index", options=[None]+categorical_cols, key=f"{ds}_pivot_index")
+            pivot_values = st.multiselect(f"{ds} - Select values", options=numeric_cols, key=f"{ds}_pivot_values")
+
+            if pivot_index and pivot_values:
+                pivot_table = pd.pivot_table(df, index=pivot_index, values=pivot_values, aggfunc='mean')
+                st.dataframe(pivot_table)
+
+            # -----------------------------
+            # Optionally, chart selection
+            # -----------------------------
+            st.write("**Charts:**")
+            chart_type = st.selectbox(f"{ds} - Select chart type", ["Bar", "Line", "Histogram"], key=f"{ds}_chart_type")
+            chart_col = st.selectbox(f"{ds} - Select column for chart", df.columns, key=f"{ds}_chart_col")
+
+            if chart_col:
+                if chart_type == "Histogram":
+                    st.bar_chart(df[chart_col])
+                else:
+                    st.line_chart(df[chart_col]) if chart_type == "Line" else st.bar_chart(df[chart_col])
+
 
 # -----------------------------
 # Tab 3: Visualization
