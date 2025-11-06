@@ -319,28 +319,42 @@ with tab3:
         display_eda(st.session_state.cleaned_b, "Dataset B", "b")
 
 # -----------------------------
-# Tab 4: Compare & Contrast
+# Tab 4: Compare & Contrast (Advanced)
 # -----------------------------
 with tab4:
     st.header("Compare & Contrast")
+
+    # Dynamic key selection for row matching
+    common_cols = []
+    if st.session_state.cleaned_a is not None and st.session_state.cleaned_b is not None:
+        common_cols = list(set(st.session_state.cleaned_a.columns).intersection(st.session_state.cleaned_b.columns))
+    
     compare_type = st.selectbox("Select Compare Type", [
         'Row presence check', 'Cell-by-cell comparison', 'Summary compare', 'Schema compare'
     ])
+
+    key_col = None
+    if compare_type == 'Row presence check' and common_cols:
+        key_col = st.selectbox("Select key column for row matching", common_cols)
 
     if st.button("Run Compare"):
         if st.session_state.cleaned_a is None or st.session_state.cleaned_b is None:
             st.warning("Please run cleaning or upload both datasets first")
         else:
+            report = None
+
             if compare_type == 'Row presence check':
-                ids_a = set(st.session_state.cleaned_a['EmployeeID']) if 'EmployeeID' in st.session_state.cleaned_a.columns else set()
-                ids_b = set(st.session_state.cleaned_b['EmployeeID']) if 'EmployeeID' in st.session_state.cleaned_b.columns else set()
-                only_in_a = ids_a - ids_b
-                only_in_b = ids_b - ids_a
-                report = pd.DataFrame({
-                    'Only in A': list(only_in_a) + [None]*(max(len(only_in_a), len(only_in_b)) - len(only_in_a)),
-                    'Only in B': list(only_in_b) + [None]*(max(len(only_in_a), len(only_in_b)) - len(only_in_b))
-                })
-                st.session_state.compare_report = report
+                if key_col is None:
+                    st.error("No key column selected for row presence check.")
+                else:
+                    ids_a = set(st.session_state.cleaned_a[key_col])
+                    ids_b = set(st.session_state.cleaned_b[key_col])
+                    only_in_a = ids_a - ids_b
+                    only_in_b = ids_b - ids_a
+                    report = pd.DataFrame({
+                        f'Only in A ({key_col})': list(only_in_a) + [None]*(max(len(only_in_a), len(only_in_b)) - len(only_in_a)),
+                        f'Only in B ({key_col})': list(only_in_b) + [None]*(max(len(only_in_a), len(only_in_b)) - len(only_in_b))
+                    })
 
             elif compare_type == 'Schema compare':
                 cols_a = set(st.session_state.cleaned_a.columns)
@@ -354,25 +368,37 @@ with tab4:
                     'Columns only in A': cols_only_a,
                     'Columns only in B': cols_only_b
                 })
-                st.session_state.compare_report = report
 
             elif compare_type == 'Cell-by-cell comparison':
-                common_cols = set(st.session_state.cleaned_a.columns).intersection(st.session_state.cleaned_b.columns)
                 diffs = []
                 for col in common_cols:
-                    if pd.api.types.is_numeric_dtype(st.session_state.cleaned_a[col]):
-                        diff_count = st.session_state.cleaned_a[col].mean() - st.session_state.cleaned_b[col].mean()
-                        diffs.append({'Column': col, 'Mean Difference': diff_count})
-                st.session_state.compare_report = pd.DataFrame(diffs)
+                    col_a = st.session_state.cleaned_a[col]
+                    col_b = st.session_state.cleaned_b[col]
+                    if pd.api.types.is_numeric_dtype(col_a):
+                        mean_diff = col_a.mean() - col_b.mean()
+                        diff_count = (col_a != col_b).sum()
+                        diffs.append({'Column': col, 'Mean Difference': mean_diff, 'Count Differences': diff_count})
+                    else:
+                        # Categorical differences
+                        mismatches = (col_a != col_b).sum()
+                        diffs.append({'Column': col, 'Mismatched Count': mismatches})
+                report = pd.DataFrame(diffs)
 
             else:  # Summary compare
-                summary_a = st.session_state.cleaned_a.describe()
-                summary_b = st.session_state.cleaned_b.describe()
-                st.session_state.compare_report = pd.concat([summary_a, summary_b], keys=['Dataset A', 'Dataset B'])
+                summary_a = st.session_state.cleaned_a.describe(include='all')
+                summary_b = st.session_state.cleaned_b.describe(include='all')
+                report = pd.concat([summary_a, summary_b], keys=['Dataset A', 'Dataset B'])
 
-            # Display the compare report if it exists
-            if st.session_state.compare_report is not None:
-                st.dataframe(st.session_state.compare_report)
+            # Store and display
+            st.session_state.compare_report = report
+            if report is not None:
+                st.dataframe(report)
+
+                # Optional: Export button
+                buffer = io.BytesIO()
+                report.to_excel(buffer, index=True)
+                st.download_button("Export Comparison Report", data=buffer, file_name="comparison_report.xlsx", mime="application/vnd.ms-excel")
+
 
 # -----------------------------
 # Tab 5: Modeling
