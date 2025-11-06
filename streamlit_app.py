@@ -401,30 +401,74 @@ with tab4:
 
 
 # -----------------------------
-# Tab 5: Modeling
+# Tab 5: Modeling (Advanced)
 # -----------------------------
 with tab5:
     st.header("Modeling & Prediction")
-    target_column = st.text_input("Enter target column for prediction")
-    if st.button("Train Model"):
-        if target_column and target_column in st.session_state.cleaned_a.columns:
-            df = st.session_state.cleaned_a.dropna()
-            X = df.drop(columns=[target_column])
-            y = df[target_column]
-            X = pd.get_dummies(X)  # Encode categorical
-            X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
-            model = RandomForestClassifier()
-            model.fit(X_train, y_train)
-            y_pred = model.predict(X_test)
-            acc = accuracy_score(y_test, y_pred)
-            rmse = mean_squared_error(y_test, y_pred, squared=False)
-            st.session_state.model_metrics = pd.DataFrame({'Metric': ['Accuracy', 'RMSE'], 'Value': [acc, rmse]})
-            st.session_state.model = model
-            st.session_state.X_train, st.session_state.X_test = X_train, X_test
-            st.session_state.y_train, st.session_state.y_test = y_train, y_test
-            st.dataframe(st.session_state.model_metrics)
-        else:
-            st.warning("Please enter a valid target column.")
+
+    if st.session_state.cleaned_a is not None:
+        target_column = st.selectbox("Select target column for prediction", st.session_state.cleaned_a.columns)
+        feature_columns = st.multiselect(
+            "Select feature columns (default: all except target)",
+            options=[c for c in st.session_state.cleaned_a.columns if c != target_column],
+            default=[c for c in st.session_state.cleaned_a.columns if c != target_column]
+        )
+
+        model_choice = st.selectbox("Select model", ["Random Forest", "Logistic Regression"])
+        test_size = st.slider("Test set size (%)", 10, 50, 20)
+        n_estimators = st.slider("Random Forest n_estimators", 50, 500, 100) if model_choice == "Random Forest" else None
+
+        if st.button("Train Model"):
+            if target_column and feature_columns:
+                df = st.session_state.cleaned_a.dropna(subset=[target_column]+feature_columns)
+                X = df[feature_columns]
+                y = df[target_column]
+
+                # Encode categoricals
+                X = pd.get_dummies(X)
+
+                # Train/test split
+                X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=test_size/100, random_state=42)
+
+                # Model selection
+                if model_choice == "Random Forest":
+                    model = RandomForestClassifier(n_estimators=n_estimators, random_state=42)
+                else:
+                    from sklearn.linear_model import LogisticRegression
+                    model = LogisticRegression(max_iter=500)
+
+                model.fit(X_train, y_train)
+                y_pred = model.predict(X_test)
+
+                # Metrics
+                from sklearn.metrics import confusion_matrix, classification_report
+                acc = accuracy_score(y_test, y_pred)
+                rmse = mean_squared_error(y_test, y_pred, squared=False)
+                st.session_state.model_metrics = pd.DataFrame({'Metric': ['Accuracy', 'RMSE'], 'Value': [acc, rmse]})
+                st.session_state.model = model
+                st.session_state.X_train, st.session_state.X_test = X_train, X_test
+                st.session_state.y_train, st.session_state.y_test = y_train, y_test
+
+                # Display metrics
+                st.subheader("Model Metrics")
+                st.dataframe(st.session_state.model_metrics)
+
+                # Confusion matrix
+                st.subheader("Confusion Matrix")
+                cm = confusion_matrix(y_test, y_pred)
+                fig = px.imshow(cm, text_auto=True, labels=dict(x="Predicted", y="Actual"), title="Confusion Matrix")
+                st.plotly_chart(fig)
+
+                # Feature importance (Random Forest only)
+                if model_choice == "Random Forest":
+                    importances = pd.Series(model.feature_importances_, index=X_train.columns).sort_values(ascending=False)
+                    st.subheader("Feature Importances")
+                    fig2 = px.bar(importances.head(10), x=importances.head(10).index, y=importances.head(10).values, title="Top 10 Features")
+                    st.plotly_chart(fig2)
+
+            else:
+                st.warning("Please select a valid target and features.")
+
 
 # -----------------------------
 # Tab 6: Explainability
