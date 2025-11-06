@@ -317,36 +317,37 @@ with tab3:
     if run_eda:
         display_eda(st.session_state.cleaned_a, "Dataset A", "a")
         display_eda(st.session_state.cleaned_b, "Dataset B", "b")
-
 # -----------------------------
-# Tab 4: Compare & Contrast (Advanced)
+# Tab 4: Compare & Contrast (Advanced & Robust)
 # -----------------------------
 with tab4:
     st.header("Compare & Contrast")
 
-    # Dynamic key selection for row matching
-    common_cols = []
-    if st.session_state.cleaned_a is not None and st.session_state.cleaned_b is not None:
-        common_cols = list(set(st.session_state.cleaned_a.columns).intersection(st.session_state.cleaned_b.columns))
-    
-    compare_type = st.selectbox("Select Compare Type", [
-        'Row presence check', 'Cell-by-cell comparison', 'Summary compare', 'Schema compare'
-    ])
+    # Ensure we have datasets
+    if st.session_state.cleaned_a is None or st.session_state.cleaned_b is None:
+        st.warning("Please run cleaning or upload both datasets first")
+    else:
+        # Determine common columns dynamically
+        common_cols = list(set(st.session_state.cleaned_a.columns).intersection(
+            st.session_state.cleaned_b.columns))
 
-    key_col = None
-    if compare_type == 'Row presence check' and common_cols:
-        key_col = st.selectbox("Select key column for row matching", common_cols)
+        compare_type = st.selectbox("Select Compare Type", [
+            'Row presence check', 'Cell-by-cell comparison', 'Summary compare', 'Schema compare'
+        ])
 
-    if st.button("Run Compare"):
-        if st.session_state.cleaned_a is None or st.session_state.cleaned_b is None:
-            st.warning("Please run cleaning or upload both datasets first")
-        else:
+        # Optional key column for row presence check
+        key_col = None
+        if compare_type == 'Row presence check' and common_cols:
+            key_col = st.selectbox("Select key column for row matching (optional)", common_cols)
+
+        if st.button("Run Compare"):
             report = None
 
+            # -----------------------------
+            # Row presence check
+            # -----------------------------
             if compare_type == 'Row presence check':
-                if key_col is None:
-                    st.error("No key column selected for row presence check.")
-                else:
+                if key_col:
                     ids_a = set(st.session_state.cleaned_a[key_col])
                     ids_b = set(st.session_state.cleaned_b[key_col])
                     only_in_a = ids_a - ids_b
@@ -355,7 +356,12 @@ with tab4:
                         f'Only in A ({key_col})': list(only_in_a) + [None]*(max(len(only_in_a), len(only_in_b)) - len(only_in_a)),
                         f'Only in B ({key_col})': list(only_in_b) + [None]*(max(len(only_in_a), len(only_in_b)) - len(only_in_b))
                     })
+                else:
+                    st.info("No key column selected. Skipping row presence check.")
 
+            # -----------------------------
+            # Schema compare
+            # -----------------------------
             elif compare_type == 'Schema compare':
                 cols_a = set(st.session_state.cleaned_a.columns)
                 cols_b = set(st.session_state.cleaned_b.columns)
@@ -369,37 +375,63 @@ with tab4:
                     'Columns only in B': cols_only_b
                 })
 
+            # -----------------------------
+            # Cell-by-cell comparison
+            # -----------------------------
             elif compare_type == 'Cell-by-cell comparison':
                 diffs = []
+
+                # Align indices to prevent ValueError
+                max_len = max(len(st.session_state.cleaned_a), len(st.session_state.cleaned_b))
+                df_a = st.session_state.cleaned_a.reindex(range(max_len))
+                df_b = st.session_state.cleaned_b.reindex(range(max_len))
+
                 for col in common_cols:
-                    col_a = st.session_state.cleaned_a[col]
-                    col_b = st.session_state.cleaned_b[col]
+                    col_a = df_a[col]
+                    col_b = df_b[col]
+
+                    # Numeric comparison
                     if pd.api.types.is_numeric_dtype(col_a):
-                        mean_diff = col_a.mean() - col_b.mean()
-                        diff_count = (col_a != col_b).sum()
-                        diffs.append({'Column': col, 'Mean Difference': mean_diff, 'Count Differences': diff_count})
+                        mean_diff = col_a.mean(skipna=True) - col_b.mean(skipna=True)
+                        diff_count = (col_a != col_b).sum()  # NaNs treated as differences
+                        diffs.append({
+                            'Column': col,
+                            'Mean Difference': mean_diff,
+                            'Count Differences': diff_count
+                        })
                     else:
-                        # Categorical differences
+                        # Categorical comparison
                         mismatches = (col_a != col_b).sum()
-                        diffs.append({'Column': col, 'Mismatched Count': mismatches})
+                        diffs.append({
+                            'Column': col,
+                            'Mismatched Count': mismatches
+                        })
+
                 report = pd.DataFrame(diffs)
 
+            # -----------------------------
+            # Summary comparison
+            # -----------------------------
             else:  # Summary compare
                 summary_a = st.session_state.cleaned_a.describe(include='all')
                 summary_b = st.session_state.cleaned_b.describe(include='all')
                 report = pd.concat([summary_a, summary_b], keys=['Dataset A', 'Dataset B'])
 
-            # Store and display
-            st.session_state.compare_report = report
+            # -----------------------------
+            # Display & export report
+            # -----------------------------
             if report is not None:
+                st.session_state.compare_report = report
                 st.dataframe(report)
 
-                # Optional: Export button
                 buffer = io.BytesIO()
                 report.to_excel(buffer, index=True)
-                st.download_button("Export Comparison Report", data=buffer, file_name="comparison_report.xlsx", mime="application/vnd.ms-excel")
-
-
+                st.download_button(
+                    "Export Comparison Report",
+                    data=buffer,
+                    file_name="comparison_report.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                )
 # -----------------------------
 # Tab 5: Modeling (Advanced)
 # -----------------------------
