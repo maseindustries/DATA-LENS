@@ -516,34 +516,61 @@ with tab6:
             st.error(f"Error generating SHAP plots: {e}")
     else:
         st.warning("Train a model first and ensure you have a test set.")
+import zipfile
+from datetime import datetime
+import os
 
-# -----------------------------
-# Tab 7: Export
-# -----------------------------
 with tab7:
     st.header("Export Reports")
     export_options = st.multiselect(
         "Select items to export",
-        options=['Cleaned Dataset A', 'Cleaned Dataset B', 'EDA Reports', 'Compare Report', 'Model Metrics', 'SHAP Plots']
+        options=[
+            'Cleaned Dataset A', 'Cleaned Dataset B', 
+            'EDA Reports', 'Compare Report', 
+            'Model Metrics', 'SHAP Plots'
+        ]
     )
-    file_name = st.text_input("Enter export file name", value="DataLens_Report.xlsx")
+
+    file_name = st.text_input("Enter export file name", value=f"DataLens_Report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.zip")
 
     if st.button("Export"):
-        with io.BytesIO() as output:
-            with pd.ExcelWriter(output, engine='openpyxl') as writer:
+        with io.BytesIO() as buffer:
+            with zipfile.ZipFile(buffer, 'w') as zf:
+                # Cleaned datasets
                 if 'Cleaned Dataset A' in export_options and st.session_state.cleaned_a is not None:
-                    st.session_state.cleaned_a.to_excel(writer, sheet_name='Cleaned A', index=False)
+                    csv_bytes = st.session_state.cleaned_a.to_csv(index=False).encode()
+                    zf.writestr("Cleaned_Dataset_A.csv", csv_bytes)
                 if 'Cleaned Dataset B' in export_options and st.session_state.cleaned_b is not None:
-                    st.session_state.cleaned_b.to_excel(writer, sheet_name='Cleaned B', index=False)
+                    csv_bytes = st.session_state.cleaned_b.to_csv(index=False).encode()
+                    zf.writestr("Cleaned_Dataset_B.csv", csv_bytes)
+                
+                # EDA Reports
+                if 'EDA Reports' in export_options:
+                    for suffix in ['a', 'b']:
+                        report = st.session_state.get(f"eda_report_{suffix}")
+                        if report is not None:
+                            zf.writestr(f"EDA_Report_{suffix.upper()}.html", report.to_html())
+                
+                # Compare Report
                 if 'Compare Report' in export_options and st.session_state.compare_report is not None:
-                    st.session_state.compare_report.to_excel(writer, sheet_name='Compare', index=False)
+                    csv_bytes = st.session_state.compare_report.to_csv(index=False).encode()
+                    zf.writestr("Compare_Report.csv", csv_bytes)
+                
+                # Model Metrics
                 if 'Model Metrics' in export_options and st.session_state.model_metrics is not None:
-                    st.session_state.model_metrics.to_excel(writer, sheet_name='Model Metrics', index=False)
-            data = output.getvalue()
+                    csv_bytes = st.session_state.model_metrics.to_csv(index=False).encode()
+                    zf.writestr("Model_Metrics.csv", csv_bytes)
+                
+                # SHAP plots (optional)
+                if 'SHAP Plots' in export_options and st.session_state.shap_plots is not None:
+                    for i, plot_bytes in enumerate(st.session_state.shap_plots):
+                        zf.writestr(f"SHAP_Plot_{i+1}.png", plot_bytes)
+
             st.download_button(
-                label="Download Excel Report",
-                data=data,
+                label="Download All Reports",
+                data=buffer.getvalue(),
                 file_name=file_name,
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                mime="application/zip"
             )
             st.success(f"Exported {file_name} successfully!")
+
