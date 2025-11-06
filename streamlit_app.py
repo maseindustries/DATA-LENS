@@ -128,87 +128,206 @@ with tab2:
 
 
 # -----------------------------
-# Tab 3: Visualization
+# Tab 3: EDA (Flexible & Multi-Dataset)
 # -----------------------------
 with tab3:
-    st.header("Visualization")
-    dataset_choice = st.selectbox("Select dataset", ["Dataset A","Dataset B"], key="viz_dataset")
-    df = st.session_state.cleaned_a if dataset_choice=="Dataset A" else st.session_state.cleaned_b
+    st.header("Exploratory Data Analysis (EDA)")
 
-    if df is not None:
-        chart_type = st.selectbox("Select Chart Type", ["Histogram","Box","Scatter"])
-        col_x = st.selectbox("X-axis", df.columns)
-        col_y = st.selectbox("Y-axis (for scatter only)", df.columns)
-        if st.button("Generate Chart"):
-            fig = None
-            if chart_type=="Histogram":
-                fig = px.histogram(df, x=col_x)
-            elif chart_type=="Box":
-                fig = px.box(df, y=col_x)
-            elif chart_type=="Scatter":
-                fig = px.scatter(df, x=col_x, y=col_y)
-            if fig:
-                st.plotly_chart(fig)
+    # -----------------------------
+    # Dataset selection
+    # -----------------------------
+    datasets_choice = st.multiselect(
+        "Select dataset(s) for EDA",
+        ["Dataset A", "Dataset B"],
+        default=["Dataset A"]
+    )
 
+    if not datasets_choice:
+        st.warning("Please select at least one dataset to analyze.")
+    else:
+        # -----------------------------
+        # Loop through selected datasets
+        # -----------------------------
+        for ds in datasets_choice:
+            df = st.session_state.cleaned_a if ds == "Dataset A" else st.session_state.cleaned_b
+            if df is None:
+                st.info(f"{ds} is not available. Please upload or clean the dataset first.")
+                continue
+
+            st.subheader(f"EDA for {ds}")
+
+            # -----------------------------
+            # Summary statistics
+            # -----------------------------
+            st.write("**Summary Statistics:**")
+            st.dataframe(df.describe(include='all'))
+
+            # -----------------------------
+            # Column type counts
+            # -----------------------------
+            st.write("**Column Types & Missing Values:**")
+            col_types = pd.DataFrame({
+                "Column": df.columns,
+                "Type": [df[col].dtype for col in df.columns],
+                "Missing Values": [df[col].isna().sum() for col in df.columns]
+            })
+            st.dataframe(col_types)
+
+            # -----------------------------
+            # Pivot table
+            # -----------------------------
+            st.write("**Pivot Table:**")
+            numeric_cols = df.select_dtypes(include=['number']).columns.tolist()
+            categorical_cols = df.select_dtypes(include=['object', 'category']).columns.tolist()
+
+            pivot_index = st.selectbox(f"{ds} - Select pivot index", options=[None]+categorical_cols, key=f"{ds}_pivot_index")
+            pivot_values = st.multiselect(f"{ds} - Select values", options=numeric_cols, key=f"{ds}_pivot_values")
+
+            if pivot_index and pivot_values:
+                pivot_table = pd.pivot_table(df, index=pivot_index, values=pivot_values, aggfunc='mean')
+                st.dataframe(pivot_table)
+
+            # -----------------------------
+            # Chart visualization
+            # -----------------------------
+            st.write("**Charts:**")
+            chart_type = st.selectbox(f"{ds} - Select chart type", ["Bar", "Line", "Histogram"], key=f"{ds}_chart_type")
+            chart_col = st.selectbox(f"{ds} - Select column for chart", df.columns, key=f"{ds}_chart_col")
+
+            if chart_col:
+                if chart_type == "Histogram":
+                    st.bar_chart(df[chart_col])
+                else:
+                    st.line_chart(df[chart_col]) if chart_type == "Line" else st.bar_chart(df[chart_col])
 # -----------------------------
 # Tab 4: Compare & Contrast
 # -----------------------------
 with tab4:
     st.header("Compare & Contrast")
-    if st.session_state.cleaned_a is None:
-        st.warning("Upload Dataset A first")
+
+    # Ensure we have datasets
+    if st.session_state.cleaned_a is None and st.session_state.cleaned_b is None:
+        st.warning("Please run cleaning or upload at least one dataset first")
     else:
-        df_a = st.session_state.cleaned_a
-        df_b = st.session_state.cleaned_b
-        common_cols = list(set(df_a.columns).intersection(df_b.columns)) if df_b is not None else []
+        datasets_available = []
+        if st.session_state.cleaned_a is not None:
+            datasets_available.append("Dataset A")
+        if st.session_state.cleaned_b is not None:
+            datasets_available.append("Dataset B")
 
-        compare_type = st.selectbox("Select Compare Type", ['Row presence check','Cell-by-cell comparison','Summary compare','Schema compare'])
-        key_col = None
-        if compare_type=='Row presence check' and common_cols:
-            key_col = st.selectbox("Key column (optional)", common_cols)
+        # Dataset selection for comparison
+        compare_datasets = st.multiselect(
+            "Select datasets to compare",
+            options=datasets_available,
+            default=datasets_available
+        )
 
-        if st.button("Run Compare"):
-            report = None
-            if compare_type=='Row presence check' and df_b is not None:
-                if key_col:
-                    ids_a = set(df_a[key_col])
-                    ids_b = set(df_b[key_col])
-                    only_in_a = ids_a - ids_b
-                    only_in_b = ids_b - ids_a
-                    report = pd.DataFrame({
-                        f'Only in A ({key_col})': list(only_in_a) + [None]*(max(len(only_in_a), len(only_in_b))-len(only_in_a)),
-                        f'Only in B ({key_col})': list(only_in_b) + [None]*(max(len(only_in_a), len(only_in_b))-len(only_in_b))
-                    })
-                else:
-                    st.info("No key column selected. Skipping row presence check.")
-            elif compare_type=='Schema compare' and df_b is not None:
-                cols_only_a = list(set(df_a.columns)-set(df_b.columns))
-                cols_only_b = list(set(df_b.columns)-set(df_a.columns))
-                max_len = max(len(cols_only_a), len(cols_only_b))
-                cols_only_a += [None]*(max_len-len(cols_only_a))
-                cols_only_b += [None]*(max_len-len(cols_only_b))
-                report = pd.DataFrame({'Columns only in A': cols_only_a,'Columns only in B': cols_only_b})
-            elif compare_type=='Cell-by-cell comparison' and df_b is not None:
-                diffs=[]
-                max_len = max(len(df_a), len(df_b))
-                df_a_r = df_a.reindex(range(max_len))
-                df_b_r = df_b.reindex(range(max_len))
-                for col in common_cols:
-                    col_a = df_a_r[col]
-                    col_b = df_b_r[col]
-                    if pd.api.types.is_numeric_dtype(col_a):
-                        diffs.append({'Column':col,'Mean Difference':col_a.mean()-col_b.mean(),'Count Differences':(col_a!=col_b).sum()})
+        if not compare_datasets:
+            st.warning("Select at least one dataset to compare.")
+        else:
+            # Dynamic common columns
+            if len(compare_datasets) == 2:
+                df1 = st.session_state.cleaned_a if compare_datasets[0] == "Dataset A" else st.session_state.cleaned_b
+                df2 = st.session_state.cleaned_a if compare_datasets[1] == "Dataset A" else st.session_state.cleaned_b
+                common_cols = list(set(df1.columns).intersection(df2.columns))
+            else:
+                df1 = st.session_state.cleaned_a if compare_datasets[0] == "Dataset A" else st.session_state.cleaned_b
+                df2 = None
+                common_cols = df1.columns.tolist()
+
+            # Compare type
+            compare_type = st.selectbox("Select Compare Type", [
+                'Row presence check', 'Cell-by-cell comparison', 'Summary compare', 'Schema compare'
+            ])
+
+            # Key column for row presence
+            key_col = None
+            if compare_type == 'Row presence check' and common_cols:
+                key_col = st.selectbox("Select key column for row matching (optional)", [None]+common_cols)
+
+            if st.button("Run Compare"):
+                report = None
+
+                # -----------------------------
+                # Row presence check
+                # -----------------------------
+                if compare_type == 'Row presence check' and df2 is not None:
+                    if key_col:
+                        ids_a = set(df1[key_col])
+                        ids_b = set(df2[key_col])
+                        only_in_a = ids_a - ids_b
+                        only_in_b = ids_b - ids_a
+                        report = pd.DataFrame({
+                            f'Only in {compare_datasets[0]} ({key_col})': list(only_in_a) + [None]*(max(len(only_in_a), len(only_in_b)) - len(only_in_a)),
+                            f'Only in {compare_datasets[1]} ({key_col})': list(only_in_b) + [None]*(max(len(only_in_a), len(only_in_b)) - len(only_in_b))
+                        })
                     else:
-                        diffs.append({'Column':col,'Mismatched Count':(col_a!=col_b).sum()})
-                report = pd.DataFrame(diffs)
-            else:  # Summary compare
-                report = pd.concat([df_a.describe(include='all'), df_b.describe(include='all')], keys=['Dataset A','Dataset B']) if df_b is not None else df_a.describe(include='all')
-            st.session_state.compare_report = report
-            st.dataframe(report)
-            buffer = io.BytesIO()
-            report.to_excel(buffer, index=True)
-            st.download_button("Export Comparison Report", data=buffer, file_name="comparison_report.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+                        st.info("No key column selected. Skipping row presence check.")
 
+                # -----------------------------
+                # Schema compare
+                # -----------------------------
+                elif compare_type == 'Schema compare' and df2 is not None:
+                    cols_a = set(df1.columns)
+                    cols_b = set(df2.columns)
+                    cols_only_a = list(cols_a - cols_b)
+                    cols_only_b = list(cols_b - cols_a)
+                    max_len = max(len(cols_only_a), len(cols_only_b))
+                    cols_only_a += [None] * (max_len - len(cols_only_a))
+                    cols_only_b += [None] * (max_len - len(cols_only_b))
+                    report = pd.DataFrame({
+                        f'Columns only in {compare_datasets[0]}': cols_only_a,
+                        f'Columns only in {compare_datasets[1]}': cols_only_b
+                    })
+
+                # -----------------------------
+                # Cell-by-cell comparison
+                # -----------------------------
+                elif compare_type == 'Cell-by-cell comparison' and df2 is not None:
+                    diffs = []
+                    max_len = max(len(df1), len(df2))
+                    df1_aligned = df1.reindex(range(max_len))
+                    df2_aligned = df2.reindex(range(max_len))
+
+                    for col in common_cols:
+                        col1 = df1_aligned[col]
+                        col2 = df2_aligned[col]
+
+                        if pd.api.types.is_numeric_dtype(col1):
+                            mean_diff = col1.mean(skipna=True) - col2.mean(skipna=True)
+                            diff_count = (col1 != col2).sum()
+                            diffs.append({'Column': col, 'Mean Difference': mean_diff, 'Count Differences': diff_count})
+                        else:
+                            mismatches = (col1 != col2).sum()
+                            diffs.append({'Column': col, 'Mismatched Count': mismatches})
+                    report = pd.DataFrame(diffs)
+
+                # -----------------------------
+                # Summary compare
+                # -----------------------------
+                elif compare_type == 'Summary compare':
+                    summary1 = df1.describe(include='all')
+                    if df2 is not None:
+                        summary2 = df2.describe(include='all')
+                        report = pd.concat([summary1, summary2], keys=compare_datasets)
+                    else:
+                        report = summary1
+
+                # -----------------------------
+                # Display & export
+                # -----------------------------
+                if report is not None:
+                    st.session_state.compare_report = report
+                    st.dataframe(report)
+
+                    buffer = io.BytesIO()
+                    report.to_excel(buffer, index=True)
+                    st.download_button(
+                        "Export Comparison Report",
+                        data=buffer,
+                        file_name="comparison_report.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                    )
 # -----------------------------
 # Tab 5: Modeling
 # -----------------------------
