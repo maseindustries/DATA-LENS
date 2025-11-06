@@ -64,18 +64,107 @@ with tab2:
 # -----------------------------
 # Tab 3: EDA
 # -----------------------------
+# -----------------------------
+# streamlit_app.py
+# DataLens — Smart Data Analysis Tool
+# -----------------------------
+
+# Install dependencies if needed (run in terminal or Colab)
+# pip install streamlit pandas numpy plotly ydata-profiling scikit-learn shap rapidfuzz openpyxl tqdm
+
+import streamlit as st
+import pandas as pd
+import io
+import plotly.express as px
+
+# -----------------------------
+# Initialize session state
+# -----------------------------
+for key in [
+    'dataset_a', 'dataset_b', 'cleaned_a', 'cleaned_b',
+    'eda_report_a', 'eda_report_b', 'compare_report',
+    'model_metrics', 'shap_plots'
+]:
+    if key not in st.session_state:
+        st.session_state[key] = None
+
+# -----------------------------
+# App Title
+# -----------------------------
+st.title("DataLens — Smart Data Analysis Tool")
+
+# -----------------------------
+# Tabs
+# -----------------------------
+tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
+    "Upload", "Cleaning", "EDA", "Compare", "Modeling", "Explainability", "Export"
+])
+
+# -----------------------------
+# Tab 1: Upload
+# -----------------------------
+with tab1:
+    st.header("Upload Datasets")
+    dataset_a_file = st.file_uploader("Upload Dataset A", type=['csv','xlsx'])
+    dataset_b_file = st.file_uploader("Upload Dataset B", type=['csv','xlsx'])
+
+    if st.button("Load Datasets"):
+        try:
+            if dataset_a_file is not None:
+                st.session_state.dataset_a = pd.read_csv(dataset_a_file) if dataset_a_file.name.endswith('.csv') else pd.read_excel(dataset_a_file)
+            if dataset_b_file is not None:
+                st.session_state.dataset_b = pd.read_csv(dataset_b_file) if dataset_b_file.name.endswith('.csv') else pd.read_excel(dataset_b_file)
+            st.success("Datasets loaded successfully!")
+
+            if st.session_state.dataset_a is not None:
+                st.subheader("Dataset A Preview")
+                st.dataframe(st.session_state.dataset_a.head())
+            if st.session_state.dataset_b is not None:
+                st.subheader("Dataset B Preview")
+                st.dataframe(st.session_state.dataset_b.head())
+
+        except Exception as e:
+            st.error(f"Error loading datasets: {e}")
+
+# -----------------------------
+# Tab 2: Cleaning
+# -----------------------------
+with tab2:
+    st.header("Cleaning & Preparation")
+    if st.button("Run Cleaning"):
+        st.write("Cleaning placeholder: implement missing value handling, deduplication, renaming, etc.")
+        st.session_state.cleaned_a = st.session_state.dataset_a.copy() if st.session_state.dataset_a is not None else None
+        st.session_state.cleaned_b = st.session_state.dataset_b.copy() if st.session_state.dataset_b is not None else None
+
+        st.write("Preview of cleaned Dataset A:")
+        st.dataframe(st.session_state.cleaned_a.head() if st.session_state.cleaned_a is not None else "No data")
+        st.write("Preview of cleaned Dataset B:")
+        st.dataframe(st.session_state.cleaned_b.head() if st.session_state.cleaned_b is not None else "No data")
+
+
+# -----------------------------
+# Tab 3: EDA
+# -----------------------------
 with tab3:
     st.header("Exploratory Data Analysis")
     if st.button("Run EDA"):
         st.write("EDA placeholder: summary stats, histograms, correlations, automated profiling.")
-        for dataset, name in [(st.session_state.cleaned_a, "Dataset A"), (st.session_state.cleaned_b, "Dataset B")]:
+
+        # Function to display summary and charts for a dataset
+        def display_eda(dataset, name, key_prefix):
             if dataset is not None:
                 st.write(f"{name} Summary")
                 st.dataframe(dataset.describe())
+
                 numeric_cols = dataset.select_dtypes(include='number').columns
                 if len(numeric_cols) > 0:
-                    fig = px.histogram(dataset, x=numeric_cols[0], title=f"Histogram of {numeric_cols[0]}")
-                    st.plotly_chart(fig)
+                    for i, col in enumerate(numeric_cols):
+                        fig = px.histogram(dataset, x=col, title=f"Histogram of {col}")
+                        st.plotly_chart(fig, key=f"{key_prefix}_{i}")  # unique key for each chart
+
+        # Display EDA for both datasets
+        display_eda(st.session_state.cleaned_a, "Dataset A", "eda_a")
+        display_eda(st.session_state.cleaned_b, "Dataset B", "eda_b")
 
 # -----------------------------
 # Tab 4: Compare & Contrast
