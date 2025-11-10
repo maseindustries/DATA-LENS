@@ -80,7 +80,7 @@ with tab2:
             st.info(f"{label} is missing or invalid. Skipping cleaning.")
             return None, []
 
-        # DEBUG
+        # Debug
         st.write(f"DEBUG: Cleaning {label}, df type = {type(df)}")
 
         # Safe column detection
@@ -205,6 +205,7 @@ with tab2:
         st.write("DEBUG: Session state types after cleaning")
         st.write(f"cleaned_a type = {type(st.session_state.get('cleaned_a'))}")
         st.write(f"cleaned_b type = {type(st.session_state.get('cleaned_b'))}")
+# -----------------------------
 # Tab 3: EDA
 # -----------------------------
 with tab3:
