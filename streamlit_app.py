@@ -1,9 +1,6 @@
 import streamlit as st
 import pandas as pd
 import io
-from sklearn.model_selection import train_test_split
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.metrics import accuracy_score, mean_squared_error, confusion_matrix
 import plotly.express as px
 
 st.set_page_config(layout="wide")
@@ -12,7 +9,7 @@ st.title("DataLens")
 # -----------------------------
 # Session state placeholders
 # -----------------------------
-for key in ["cleaned_a", "cleaned_b", "compare_report", "model", "model_metrics", "X_train", "X_test", "y_train", "y_test"]:
+for key in ["cleaned_a", "cleaned_b", "compare_report"]:
     if key not in st.session_state:
         st.session_state[key] = None
 
@@ -188,7 +185,6 @@ with tab3:
                     fig = px.imshow(corr, text_auto=True, title=f"{ds} - Correlation Heatmap")
                     st.plotly_chart(fig, use_container_width=True)
 
-            # Determine which charts to render
             if chart_type == "All":
                 with st.expander(f"{ds} - Histogram"):
                     plot_histogram()
@@ -296,8 +292,6 @@ with tab4:
                 for col in shared_cols:
                     col_a = df_a[col]
                     col_b = df_b[col]
-
-                    # Align lengths
                     min_len = min(len(col_a), len(col_b))
                     col_a = col_a.iloc[:min_len]
                     col_b = col_b.iloc[:min_len]
@@ -353,7 +347,6 @@ with tab4:
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                 )
 
-                # Optional visualization summary
                 if compare_type in ["Row presence check", "Schema compare"]:
                     st.subheader("Visual Summary")
                     summary_data = {
@@ -365,14 +358,14 @@ with tab4:
                     st.plotly_chart(fig, use_container_width=True)
 
 # -----------------------------
-# Tab 7: Export
+# Tab 5: Export
 # -----------------------------
-with tab7:
+with tab5:
     st.header("Export Reports")
 
     export_options = st.multiselect(
         "Select items to export",
-        options=['Cleaned Dataset A', 'Cleaned Dataset B', 'EDA Reports', 'Compare Report', 'Model Metrics', 'SHAP Plots'],
+        options=['Cleaned Dataset A', 'Cleaned Dataset B', 'EDA Reports', 'Compare Report'],
         key="export_options"
     )
 
@@ -384,3 +377,4 @@ with tab7:
 
     if st.button("Export", key="export_button"):
         st.success(f"Exported {', '.join(export_options)} to {file_name}")
+
