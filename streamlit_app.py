@@ -207,21 +207,22 @@ with tab3:
                     st.plotly_chart(fig, use_container_width=True)
                 else:
                     st.warning(f"No numeric columns for correlation in {ds}.")
-                    # -----------------------------
+# -----------------------------
 # Tab 4: Compare & Contrast
 # -----------------------------
 with tab4:
     st.header("Compare & Contrast")
-    df_a = st.session_state.get('cleaned_a_saved') or st.session_state.get('cleaned_a')
-    df_b = st.session_state.get('cleaned_b_saved') or st.session_state.get('cleaned_b')
+
+    # Safely get datasets
+    df_a = st.session_state['cleaned_a_saved'] if 'cleaned_a_saved' in st.session_state and st.session_state['cleaned_a_saved'] is not None else st.session_state.get('cleaned_a')
+    df_b = st.session_state['cleaned_b_saved'] if 'cleaned_b_saved' in st.session_state and st.session_state['cleaned_b_saved'] is not None else st.session_state.get('cleaned_b')
     name_a = st.session_state.get('cleaned_a_name') or "Dataset A"
     name_b = st.session_state.get('cleaned_b_name') or "Dataset B"
 
     if df_a is None and df_b is None:
         st.warning("Upload and clean at least one dataset first.")
     else:
-        common_cols = list(set(df_a.columns if df_a is not None else []).
-                           intersection(df_b.columns if df_b is not None else []))
+        common_cols = list(set(df_a.columns if df_a is not None else []).intersection(df_b.columns if df_b is not None else []))
         compare_type = st.selectbox(
             "Select Compare Type",
             ['Row presence check', 'Cell-by-cell comparison', 'Summary compare', 'Schema compare']
@@ -316,7 +317,8 @@ with tab4:
                 st.session_state.compare_report = report
                 st.markdown(f"**Summary:** {explanation}")
                 st.dataframe(report, use_container_width=True)
-                # -----------------------------
+
+# -----------------------------
 # Tab 5: Export
 # -----------------------------
 with tab5:
@@ -479,4 +481,3 @@ with tab6:
 
             pdf_output = pdf.output(dest='S').encode('latin-1', 'replace')
             st.download_button("Download PDF", data=pdf_output, file_name=f"{dataset_choice}_DataLens.pdf", mime="application/pdf")
-
