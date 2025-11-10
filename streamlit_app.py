@@ -307,12 +307,15 @@ with tab4:
 # -----------------------------
 with tab5:
     st.header("Export Reports")
+    
     export_options = st.multiselect(
         "Select items to export to Excel",
         ['Cleaned Dataset A', 'Cleaned Dataset B', 'Duplicates', 'Outliers']
     )
+    
     file_name = st.text_input("Export file name", value="DataLens_Report.xlsx")
 
+    # Function to detect outliers
     def detect_outliers(df):
         numeric_cols = df.select_dtypes(include=['number']).columns
         if numeric_cols.empty:
@@ -332,10 +335,13 @@ with tab5:
         else:
             buffer = io.BytesIO()
             with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
-                if 'Cleaned Dataset A' in export_options and st.session_state.cleaned_a is not None:
+                # Cleaned datasets
+                if 'Cleaned Dataset A' in export_options and st.session_state.get('cleaned_a') is not None:
                     st.session_state.cleaned_a.to_excel(writer, sheet_name='Cleaned_A', index=False)
-                if 'Cleaned Dataset B' in export_options and st.session_state.cleaned_b is not None:
+                if 'Cleaned Dataset B' in export_options and st.session_state.get('cleaned_b') is not None:
                     st.session_state.cleaned_b.to_excel(writer, sheet_name='Cleaned_B', index=False)
+
+                # Duplicates
                 if 'Duplicates' in export_options:
                     for ds_name in ['cleaned_a', 'cleaned_b']:
                         df = st.session_state.get(ds_name)
@@ -343,6 +349,8 @@ with tab5:
                             duplicates = df[df.duplicated(keep=False)]
                             if not duplicates.empty:
                                 duplicates.to_excel(writer, sheet_name=f'Duplicates_{ds_name[-1].upper()}', index=False)
+
+                # Outliers
                 if 'Outliers' in export_options:
                     for ds_name in ['cleaned_a', 'cleaned_b']:
                         df = st.session_state.get(ds_name)
@@ -350,90 +358,23 @@ with tab5:
                             outliers = detect_outliers(df)
                             if not outliers.empty:
                                 outliers.to_excel(writer, sheet_name=f'Outliers_{ds_name[-1].upper()}', index=False)
-            st.download_button("Download Excel Report", data=buffer.getvalue(), file_name=file_name, mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+
+            st.download_button(
+                "Download Excel Report",
+                data=buffer.getvalue(),
+                file_name=file_name,
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )
             st.success(f"Exported: {', '.join(export_options)}")
-import pandas as pd
-import matplotlib.pyplot as plt
-from fpdf import FPDF
-import io
 
-# Load data
-df = pd.read_csv("your_dataset.csv")
 
-pdf = FPDF()
-pdf.set_auto_page_break(auto=True, margin=15)
-pdf.add_page()
-
-# Title Page
-pdf.set_font("Arial", 'B', 16)
-pdf.cell(0, 10, "Automated Data Report", ln=True, align='C')
-pdf.set_font("Arial", '', 12)
-pdf.ln(10)
-pdf.multi_cell(0, 6, f"Rows: {df.shape[0]}  Columns: {df.shape[1]}")
-
-# Dataset Overview
-pdf.set_font("Arial", 'B', 12)
-pdf.ln(5)
-pdf.cell(0, 10, "Dataset Overview", ln=True)
-pdf.set_font("Arial", '', 10)
-missing = df.isna().sum()
-for col in df.columns:
-    pdf.multi_cell(0, 5, f"{col} ({df[col].dtype}): missing {missing[col]} ({missing[col]/len(df)*100:.1f}%)")
-
-# Descriptive Statistics
-pdf.set_font("Arial", 'B', 12)
-pdf.ln(5)
-pdf.cell(0, 10, "Descriptive Statistics", ln=True)
-pdf.set_font("Arial", '', 9)
-desc = df.describe().transpose()
-pdf.multi_cell(0, 5, desc.to_string())
-
-# Automatic insights
-pdf.ln(2)
-insights = []
-for col in df.select_dtypes(include='number').columns:
-    median = desc.loc[col, '50%']
-    max_val = desc.loc[col, 'max']
-    if max_val > median * 3:
-        insights.append(f"Column `{col}` has a max ({max_val}) much larger than median ({median}) — possible outlier.")
-if insights:
-    pdf.set_font("Arial", 'I', 10)
-    pdf.multi_cell(0, 5, "Insights:\n" + "\n".join(insights))
-
-# Correlation Matrix
-pdf.add_page()
-pdf.set_font("Arial", 'B', 12)
-pdf.cell(0, 10, "Correlation Matrix", ln=True)
-
-corr = df.corr()
-plt.figure(figsize=(6,5))
-plt.imshow(corr, cmap='coolwarm', vmin=-1, vmax=1)
-plt.colorbar()
-plt.xticks(range(len(corr)), corr.columns, rotation=90)
-plt.yticks(range(len(corr)), corr.columns)
-plt.tight_layout()
-buf = io.BytesIO()
-plt.savefig(buf, format='png')
-plt.close()
-buf.seek(0)
-pdf.image(buf, x=10, w=180)
-
-# Correlation insights
-pdf.set_font("Arial", 'I', 10)
-strong_corrs = []
-for i in corr.columns:
-    for j in corr.columns:
-        if i != j and abs(corr.loc[i,j]) > 0.7:
-            strong_corrs.append(f"{i} ↔ {j} (r={corr.loc[i,j]:.2f})")
-if strong_corrs:
-    pdf.multi_cell(0, 5, "Strong correlations:\n" + "\n".join(strong_corrs))
-    # -----------------------------
+# -----------------------------
 # Tab 6: PDF Summary
 # -----------------------------
 with tab6:
     st.header("Generate PDF Report")
 
-    # Options for optional visuals
+    # Optional visuals
     include_corr = st.checkbox("Include Correlation Heatmap", value=True)
     include_charts = st.checkbox("Include Charts/Visuals", value=False)
 
@@ -455,9 +396,7 @@ with tab6:
             pdf.ln(10)
             pdf.multi_cell(0, 6, f"Rows: {df.shape[0]}  Columns: {df.shape[1]}")
 
-            # -----------------------------
             # Dataset Overview
-            # -----------------------------
             pdf.set_font("Arial", 'B', 12)
             pdf.ln(5)
             pdf.cell(0, 10, "Dataset Overview", ln=True)
@@ -466,9 +405,7 @@ with tab6:
             for col in df.columns:
                 pdf.multi_cell(0, 5, f"{col} ({df[col].dtype}): missing {missing[col]} ({missing[col]/len(df)*100:.1f}%)")
 
-            # -----------------------------
             # Descriptive Statistics
-            # -----------------------------
             pdf.set_font("Arial", 'B', 12)
             pdf.ln(5)
             pdf.cell(0, 10, "Descriptive Statistics", ln=True)
@@ -476,9 +413,7 @@ with tab6:
             desc = df.describe().transpose()
             pdf.multi_cell(0, 5, desc.to_string())
 
-            # -----------------------------
             # Automatic Insights
-            # -----------------------------
             pdf.ln(2)
             insights = []
             for col in df.select_dtypes(include='number').columns:
@@ -490,9 +425,7 @@ with tab6:
                 pdf.set_font("Arial", 'I', 10)
                 pdf.multi_cell(0, 5, "Insights:\n" + "\n".join(insights))
 
-            # -----------------------------
             # Optional: Correlation Heatmap
-            # -----------------------------
             if include_corr:
                 pdf.add_page()
                 pdf.set_font("Arial", 'B', 12)
@@ -520,9 +453,7 @@ with tab6:
                 if strong_corrs:
                     pdf.multi_cell(0, 5, "Strong correlations:\n" + "\n".join(strong_corrs))
 
-            # -----------------------------
-            # Optional: Charts/Visuals
-            # -----------------------------
+            # Optional: Charts / Visuals placeholder
             if include_charts:
                 pdf.add_page()
                 pdf.set_font("Arial", 'B', 12)
@@ -541,7 +472,3 @@ with tab6:
                 mime="application/pdf"
             )
             st.success("PDF generated successfully!")
-
-
-# Save PDF
-pdf.output("enhanced_data_report.pdf")
