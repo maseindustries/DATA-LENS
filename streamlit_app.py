@@ -358,23 +358,128 @@ with tab4:
                     st.plotly_chart(fig, use_container_width=True)
 
 # -----------------------------
-# Tab 5: Export
+# Tab 5: Export & Insights
 # -----------------------------
 with tab5:
-    st.header("Export Reports")
+    st.header("Export & Insights")
 
-    export_options = st.multiselect(
-        "Select items to export",
-        options=['Cleaned Dataset A', 'Cleaned Dataset B', 'EDA Reports', 'Compare Report'],
-        key="export_options"
-    )
+    df_a = st.session_state.cleaned_a
+    df_b = st.session_state.cleaned_b
+    compare_report = st.session_state.compare_report
 
-    file_name = st.text_input(
+    # --- Generate Insights ---
+    if df_a is not None or df_b is not None:
+        st.subheader("High-Level Cleaning Insights")
+
+        def dataset_summary(cleaned_df, name):
+            desc = cleaned_df.describe(include='all').transpose()
+            desc["Missing %"] = cleaned_df.isna().mean() * 100
+            desc["Data Type"] = cleaned_df.dtypes.astype(str)
+            summary = pd.DataFrame({
+                "Dataset": name,
+                "Rows": [len(cleaned_df)],
+                "Columns": [len(cleaned_df.columns)],
+                "Missing Values (%)": [cleaned_df.isna().mean().mean() * 100],
+                "Duplicate Rows": [cleaned_df.duplicated().sum()],
+                "Numeric Columns": [len(cleaned_df.select_dtypes(include='number').columns)],
+                "Categorical Columns": [len(cleaned_df.select_dtypes(include='object').columns)]
+            })
+            return desc, summary
+
+        summaries = []
+        details = {}
+
+        if df_a is not None:
+            desc_a, summary_a = dataset_summary(df_a, "Dataset A")
+            summaries.append(summary_a)
+            details["Dataset A Summary"] = desc_a
+
+        if df_b is not None:
+            desc_b, summary_b = dataset_summary(df_b, "Dataset B")
+            summaries.append(summary_b)
+            details["Dataset B Summary"] = desc_b
+
+        if summaries:
+            combined_summary = pd.concat(summaries, ignore_index=True)
+            st.dataframe(combined_summary)
+        else:
+            st.info("No datasets available for insights.")
+
+    # --- Outlier Detection ---
+    if df_a is not None or df_b is not None:
+        st.subheader("Outlier Detection")
+
+        def detect_outliers(df, name):
+            outlier_summary = []
+            numeric_cols = df.select_dtypes(include='number').columns
+
+            for col in numeric_cols:
+                q1 = df[col].quantile(0.25)
+                q3 = df[col].quantile(0.75)
+                iqr = q3 - q1
+                lower = q1 - 1.5 * iqr
+                upper = q3 + 1.5 * iqr
+                mask = (df[col] < lower) | (df[col] > upper)
+                outliers = df[mask]
+                outlier_count = mask.sum()
+                if outlier_count > 0:
+                    outlier_summary.append({
+                        "Dataset": name,
+                        "Column": col,
+                        "Outlier Count": outlier_count,
+                        "Percent of Total": round((outlier_count / len(df)) * 100, 2),
+                        "Lower Bound": round(lower, 3),
+                        "Upper Bound": round(upper, 3),
+                        "Example Outliers": ", ".join(map(str, outliers[col].head(3).tolist()))
+                    })
+            return pd.DataFrame(outlier_summary)
+
+        outlier_reports = []
+        if df_a is not None:
+            outlier_reports.append(detect_outliers(df_a, "Dataset A"))
+        if df_b is not None:
+            outlier_reports.append(detect_outliers(df_b, "Dataset B"))
+
+        if outlier_reports:
+            combined_outliers = pd.concat(outlier_reports, ignore_index=True)
+            st.dataframe(combined_outliers)
+
+            st.metric("Total Outliers Detected", len(combined_outliers))
+        else:
+            st.info("No outliers detected.")
+
+    # --- Excel Export ---
+    st.subheader("Export Full Report")
+
+    export_name = st.text_input(
         "Enter export file name",
         value="DataLens_Report.xlsx",
         key="export_filename"
     )
 
-    if st.button("Export", key="export_button"):
-        st.success(f"Exported {', '.join(export_options)} to {file_name}")
+    if st.button("Generate Excel Report", key="export_button"):
+        if not (df_a is not None or df_b is not None):
+            st.warning("Please upload and clean at least one dataset before exporting.")
+        else:
+            buffer = io.BytesIO()
+            with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
+                if df_a is not None:
+                    df_a.to_excel(writer, index=False, sheet_name="Cleaned_A")
+                if df_b is not None:
+                    df_b.to_excel(writer, index=False, sheet_name="Cleaned_B")
+                if summaries:
+                    combined_summary.to_excel(writer, index=False, sheet_name="HighLevel_Insights")
+                if outlier_reports:
+                    combined_outliers.to_excel(writer, index=False, sheet_name="Outlier_Report")
+                if compare_report is not None:
+                    compare_report.to_excel(writer, index=True, sheet_name="Compare_Report")
+
+            st.download_button(
+                "📊 Download Excel Report",
+                data=buffer.getvalue(),
+                file_name=export_name,
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )
+
+            st.success(f"Export created successfully: {export_name}")
 
