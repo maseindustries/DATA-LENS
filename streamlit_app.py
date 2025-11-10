@@ -420,20 +420,24 @@ with tab5:
 with tab6:
     st.header("Generate PDF Report")
 
-    # Select dataset safely
+    # Dataset names
     name_a = st.session_state.get('cleaned_a_name', 'Dataset A')
     name_b = st.session_state.get('cleaned_b_name', 'Dataset B')
 
+    # Select dataset
     dataset_choice = st.selectbox(
         "Select Dataset for PDF Report",
         [name_a, name_b]
     )
     df = st.session_state.get('cleaned_a') if dataset_choice == name_a else st.session_state.get('cleaned_b')
 
-    if df is None:
+    if df is None or df.empty:
         st.warning("Please upload and clean the dataset first.")
     else:
-        # Sections to include
+        # Ensure categorical columns exist
+        cat_cols = df.select_dtypes(include=['object']).columns if df is not None else []
+
+        # Sections to include in PDF
         pdf_sections = st.multiselect(
             "Select sections to include in PDF",
             [
@@ -457,7 +461,7 @@ with tab6:
             pdf.cell(0, 10, f"{dataset_choice} - DataLens Report", ln=True, align="C")
             pdf.ln(10)
 
-            # Data Overview
+            # ---------------- Data Overview ----------------
             if "Data Overview (rows, columns, missing, duplicates)" in pdf_sections:
                 pdf.set_font("Arial", 'B', 12)
                 pdf.cell(0, 10, "Data Overview", ln=True)
@@ -469,7 +473,7 @@ with tab6:
                 pdf.cell(0, 5, f"Duplicate rows: {duplicates}", ln=True)
                 pdf.ln(5)
 
-            # Descriptive Statistics
+            # ---------------- Descriptive Statistics ----------------
             if "Descriptive Statistics" in pdf_sections:
                 pdf.set_font("Arial", 'B', 12)
                 pdf.cell(0, 10, "Descriptive Statistics", ln=True)
@@ -478,10 +482,11 @@ with tab6:
                 pdf.multi_cell(0, 5, stats.to_string())
                 pdf.ln(5)
 
-            # Outlier Summary
+            # ---------------- Outlier Summary ----------------
             if "Outlier Summary" in pdf_sections:
                 pdf.set_font("Arial", 'B', 12)
                 pdf.cell(0, 10, "Outlier Summary", ln=True)
+                pdf.set_font("Arial", '', 10)
                 numeric_cols = df.select_dtypes(include=['number']).columns
                 outliers = pd.DataFrame()
                 if len(numeric_cols) > 0:
@@ -492,16 +497,17 @@ with tab6:
                         mask = (df[col] < Q1 - 1.5 * IQR) | (df[col] > Q3 + 1.5 * IQR)
                         outliers = pd.concat([outliers, df[mask]])
                     outliers = outliers.drop_duplicates()
-                pdf.set_font("Arial", '', 10)
                 pdf.multi_cell(0, 5, f"Found {len(outliers)} outlier rows")
                 pdf.ln(5)
 
-            # Cleaning Operations
+            # ---------------- Cleaning Operations ----------------
             if "Cleaning Operations" in pdf_sections:
                 pdf.set_font("Arial", 'B', 12)
                 pdf.cell(0, 10, "Applied Cleaning Operations", ln=True)
                 pdf.set_font("Arial", '', 10)
                 ops = st.session_state.get('cleaned_a_operations' if dataset_choice == name_a else 'cleaned_b_operations', [])
+                if not isinstance(ops, list):
+                    ops = []
                 if ops:
                     for op in ops:
                         pdf.multi_cell(0, 5, f"- {op}")
@@ -509,18 +515,21 @@ with tab6:
                     pdf.multi_cell(0, 5, "No cleaning operations applied.")
                 pdf.ln(5)
 
-            # Top N Categories
+            # ---------------- Top N Categories ----------------
             if "Top N Categories" in pdf_sections:
                 pdf.set_font("Arial", 'B', 12)
                 pdf.cell(0, 10, f"Top {top_n} Categories", ln=True)
                 pdf.set_font("Arial", '', 10)
-                cat_cols = df.select_dtypes(include=['object']).columns
-                for col in cat_cols:
-                    top_vals = df[col].value_counts().head(top_n)
-                    pdf.multi_cell(0, 5, f"{col}:\n{top_vals.to_string()}")
-                    pdf.ln(2)
+                if len(cat_cols) > 0:
+                    for col in cat_cols:
+                        top_vals = df[col].value_counts().head(top_n)
+                        pdf.multi_cell(0, 5, f"{col}:\n{top_vals.to_string()}")
+                        pdf.ln(2)
+                else:
+                    pdf.multi_cell(0, 5, "No categorical columns found.")
+                pdf.ln(5)
 
-            # Charts placeholder
+            # ---------------- Charts placeholder ----------------
             if "Charts" in pdf_sections:
                 pdf.set_font("Arial", 'B', 12)
                 pdf.cell(0, 10, "Charts included", ln=True)
@@ -528,7 +537,7 @@ with tab6:
                 pdf.multi_cell(0, 5, "Charts from EDA would be inserted here.")
                 pdf.ln(5)
 
-            # Insights Paragraph
+            # ---------------- Insights Paragraph ----------------
             if "Insights Paragraph" in pdf_sections:
                 pdf.set_font("Arial", 'B', 12)
                 pdf.cell(0, 10, "Insights", ln=True)
@@ -547,7 +556,11 @@ with tab6:
                 pdf.multi_cell(0, 5, insights)
                 pdf.ln(5)
 
-            # Output PDF
+            # ---------------- Output PDF ----------------
             out_bytes = pdf.output(dest='S').encode('latin-1')
-            st.download_button("Download PDF", data=out_bytes, file_name=f"{dataset_choice}_Report.pdf")
+            st.download_button(
+                "Download PDF",
+                data=out_bytes,
+                file_name=f"{dataset_choice}_Report.pdf"
+            )
 
