@@ -427,6 +427,121 @@ for i in corr.columns:
             strong_corrs.append(f"{i} ↔ {j} (r={corr.loc[i,j]:.2f})")
 if strong_corrs:
     pdf.multi_cell(0, 5, "Strong correlations:\n" + "\n".join(strong_corrs))
+    # -----------------------------
+# Tab 6: PDF Summary
+# -----------------------------
+with tab6:
+    st.header("Generate PDF Report")
+
+    # Options for optional visuals
+    include_corr = st.checkbox("Include Correlation Heatmap", value=True)
+    include_charts = st.checkbox("Include Charts/Visuals", value=False)
+
+    dataset_choice = st.selectbox("Select dataset for PDF", ["Dataset A", "Dataset B"])
+    df = st.session_state.cleaned_a if dataset_choice == "Dataset A" else st.session_state.cleaned_b
+
+    if df is None:
+        st.warning("Please upload and clean the selected dataset first.")
+    else:
+        if st.button("Generate PDF"):
+            pdf = FPDF()
+            pdf.set_auto_page_break(auto=True, margin=15)
+            pdf.add_page()
+
+            # Title Page
+            pdf.set_font("Arial", 'B', 16)
+            pdf.cell(0, 10, f"Automated Data Report - {dataset_choice}", ln=True, align='C')
+            pdf.set_font("Arial", '', 12)
+            pdf.ln(10)
+            pdf.multi_cell(0, 6, f"Rows: {df.shape[0]}  Columns: {df.shape[1]}")
+
+            # -----------------------------
+            # Dataset Overview
+            # -----------------------------
+            pdf.set_font("Arial", 'B', 12)
+            pdf.ln(5)
+            pdf.cell(0, 10, "Dataset Overview", ln=True)
+            pdf.set_font("Arial", '', 10)
+            missing = df.isna().sum()
+            for col in df.columns:
+                pdf.multi_cell(0, 5, f"{col} ({df[col].dtype}): missing {missing[col]} ({missing[col]/len(df)*100:.1f}%)")
+
+            # -----------------------------
+            # Descriptive Statistics
+            # -----------------------------
+            pdf.set_font("Arial", 'B', 12)
+            pdf.ln(5)
+            pdf.cell(0, 10, "Descriptive Statistics", ln=True)
+            pdf.set_font("Arial", '', 9)
+            desc = df.describe().transpose()
+            pdf.multi_cell(0, 5, desc.to_string())
+
+            # -----------------------------
+            # Automatic Insights
+            # -----------------------------
+            pdf.ln(2)
+            insights = []
+            for col in df.select_dtypes(include='number').columns:
+                median = desc.loc[col, '50%']
+                max_val = desc.loc[col, 'max']
+                if max_val > median * 3:
+                    insights.append(f"Column `{col}` has a max ({max_val}) much larger than median ({median}) — possible outlier.")
+            if insights:
+                pdf.set_font("Arial", 'I', 10)
+                pdf.multi_cell(0, 5, "Insights:\n" + "\n".join(insights))
+
+            # -----------------------------
+            # Optional: Correlation Heatmap
+            # -----------------------------
+            if include_corr:
+                pdf.add_page()
+                pdf.set_font("Arial", 'B', 12)
+                pdf.cell(0, 10, "Correlation Heatmap", ln=True)
+                corr = df.corr()
+                plt.figure(figsize=(6,5))
+                plt.imshow(corr, cmap='coolwarm', vmin=-1, vmax=1)
+                plt.colorbar()
+                plt.xticks(range(len(corr)), corr.columns, rotation=90)
+                plt.yticks(range(len(corr)), corr.columns)
+                plt.tight_layout()
+                buf = io.BytesIO()
+                plt.savefig(buf, format='png')
+                plt.close()
+                buf.seek(0)
+                pdf.image(buf, x=10, w=180)
+
+                # Correlation insights
+                pdf.set_font("Arial", 'I', 10)
+                strong_corrs = []
+                for i in corr.columns:
+                    for j in corr.columns:
+                        if i != j and abs(corr.loc[i,j]) > 0.7:
+                            strong_corrs.append(f"{i} ↔ {j} (r={corr.loc[i,j]:.2f})")
+                if strong_corrs:
+                    pdf.multi_cell(0, 5, "Strong correlations:\n" + "\n".join(strong_corrs))
+
+            # -----------------------------
+            # Optional: Charts/Visuals
+            # -----------------------------
+            if include_charts:
+                pdf.add_page()
+                pdf.set_font("Arial", 'B', 12)
+                pdf.cell(0, 10, "Charts / Visuals", ln=True)
+                st.warning("Chart visuals are not yet implemented in PDF; this is a placeholder.")
+
+            # Save PDF to buffer
+            buffer = io.BytesIO()
+            pdf.output(buffer)
+            buffer.seek(0)
+
+            st.download_button(
+                label="Download PDF Report",
+                data=buffer,
+                file_name=f"{dataset_choice}_Data_Report.pdf",
+                mime="application/pdf"
+            )
+            st.success("PDF generated successfully!")
+
 
 # Save PDF
 pdf.output("enhanced_data_report.pdf")
