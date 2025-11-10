@@ -362,9 +362,15 @@ with tab4:
 with tab5:
     st.header("Export Reports")
 
+    # Options for Excel export
     export_options = st.multiselect(
-        "Select items to export",
-        options=['Cleaned Dataset A', 'Cleaned Dataset B', 'Duplicates', 'Outliers'],
+        "Select items to export to Excel",
+        options=[
+            'Cleaned Dataset A',
+            'Cleaned Dataset B',
+            'Duplicates',
+            'Outliers'
+        ],
         key="export_options"
     )
 
@@ -374,49 +380,61 @@ with tab5:
         key="export_filename"
     )
 
-    def find_duplicates(df):
-        return df[df.duplicated(keep=False)]
-
-    def find_outliers(df):
+    # Define outlier detection
+    def detect_outliers(df):
         numeric_cols = df.select_dtypes(include=['number']).columns
-        if len(numeric_cols) == 0:
-            return pd.DataFrame()  # no numeric columns
-        outlier_mask = pd.DataFrame(False, index=df.index, columns=numeric_cols)
+        if numeric_cols.empty:
+            return pd.DataFrame()  # No numeric columns to detect
+        outlier_rows = pd.DataFrame()
         for col in numeric_cols:
-            q1 = df[col].quantile(0.25)
-            q3 = df[col].quantile(0.75)
-            iqr = q3 - q1
-            outlier_mask[col] = (df[col] < (q1 - 1.5 * iqr)) | (df[col] > (q3 + 1.5 * iqr))
-        outlier_rows = df[outlier_mask.any(axis=1)]
-        return outlier_rows
+            Q1 = df[col].quantile(0.25)
+            Q3 = df[col].quantile(0.75)
+            IQR = Q3 - Q1
+            mask = (df[col] < Q1 - 1.5 * IQR) | (df[col] > Q3 + 1.5 * IQR)
+            outlier_rows = pd.concat([outlier_rows, df[mask]])
+        return outlier_rows.drop_duplicates()
 
-    if st.button("Export", key="export_button"):
+    # Export button
+    if st.button("Export Selected", key="export_button"):
         if not export_options:
-            st.warning("Select at least one option to export.")
+            st.warning("Select at least one item to export.")
         else:
             buffer = io.BytesIO()
             with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
+
+                # Export cleaned datasets
                 if 'Cleaned Dataset A' in export_options and st.session_state.cleaned_a is not None:
                     st.session_state.cleaned_a.to_excel(writer, sheet_name='Cleaned_A', index=False)
+
                 if 'Cleaned Dataset B' in export_options and st.session_state.cleaned_b is not None:
                     st.session_state.cleaned_b.to_excel(writer, sheet_name='Cleaned_B', index=False)
+
+                # Export duplicates
                 if 'Duplicates' in export_options:
-                    if st.session_state.cleaned_a is not None:
-                        find_duplicates(st.session_state.cleaned_a).to_excel(writer, sheet_name='Duplicates_A', index=False)
-                    if st.session_state.cleaned_b is not None:
-                        find_duplicates(st.session_state.cleaned_b).to_excel(writer, sheet_name='Duplicates_B', index=False)
+                    for ds_name in ['cleaned_a', 'cleaned_b']:
+                        df = st.session_state.get(ds_name)
+                        if df is not None:
+                            duplicates = df[df.duplicated(keep=False)]
+                            if not duplicates.empty:
+                                sheet = f'Duplicates_{ds_name[-1].upper()}'
+                                duplicates.to_excel(writer, sheet_name=sheet, index=False)
+
+                # Export outliers
                 if 'Outliers' in export_options:
-                    if st.session_state.cleaned_a is not None:
-                        find_outliers(st.session_state.cleaned_a).to_excel(writer, sheet_name='Outliers_A', index=False)
-                    if st.session_state.cleaned_b is not None:
-                        find_outliers(st.session_state.cleaned_b).to_excel(writer, sheet_name='Outliers_B', index=False)
+                    for ds_name in ['cleaned_a', 'cleaned_b']:
+                        df = st.session_state.get(ds_name)
+                        if df is not None:
+                            outliers = detect_outliers(df)
+                            if not outliers.empty:
+                                sheet = f'Outliers_{ds_name[-1].upper()}'
+                                outliers.to_excel(writer, sheet_name=sheet, index=False)
 
-                writer.save()
-
+            # Download button
             st.download_button(
                 "Download Excel Report",
                 data=buffer.getvalue(),
                 file_name=file_name,
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             )
-            st.success(f"Export completed for: {', '.join(export_options)}")
+
+            st.success(f"Exported: {', '.join(export_options)}")
