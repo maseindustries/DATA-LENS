@@ -71,7 +71,64 @@ with tab1:
 with tab2:
     st.header("Data Cleaning")
 
-    # Define datasets
+    # -----------------------------
+    # Helper function for safe cleaning
+    # -----------------------------
+    def clean_dataset(df, label, cleaning_options):
+        # Safety check
+        if df is None or not isinstance(df, pd.DataFrame):
+            st.info(f"{label} is missing or invalid. Skipping cleaning.")
+            return None, []
+
+        # DEBUG
+        st.write(f"DEBUG: Cleaning {label}, df type = {type(df)}")
+
+        # Safe column detection
+        numeric_cols = df.select_dtypes(include=['number']).columns
+        cat_cols = df.select_dtypes(include=['object']).columns
+
+        applied_ops = []
+        original_shape = df.shape
+
+        # -----------------------------
+        # Apply cleaning operations
+        # -----------------------------
+        if "Drop duplicate rows" in cleaning_options:
+            before = len(df)
+            df = df.drop_duplicates()
+            if len(df) < before:
+                applied_ops.append("Duplicate rows removed")
+
+        if "Fill missing numeric values with median" in cleaning_options:
+            for col in numeric_cols:
+                na_count = df[col].isna().sum()
+                if na_count > 0:
+                    df[col].fillna(df[col].median(), inplace=True)
+                    applied_ops.append(f"Filled {na_count} missing numeric values in {col}")
+
+        if "Fill missing categorical values with mode" in cleaning_options:
+            for col in cat_cols:
+                na_count = df[col].isna().sum()
+                if na_count > 0 and not df[col].mode().empty:
+                    df[col].fillna(df[col].mode()[0], inplace=True)
+                    applied_ops.append(f"Filled {na_count} missing categorical values in {col}")
+
+        if "Trim whitespace from string columns" in cleaning_options:
+            for col in cat_cols:
+                df[col] = df[col].apply(lambda x: x.strip() if isinstance(x, str) else x)
+            applied_ops.append("Trimmed whitespace from string columns")
+
+        if "Remove columns with all nulls" in cleaning_options:
+            all_null_cols = df.columns[df.isna().all()].tolist()
+            if all_null_cols:
+                df.drop(columns=all_null_cols, inplace=True)
+                applied_ops.append(f"Removed {len(all_null_cols)} columns with all nulls")
+
+        return df, applied_ops
+
+    # -----------------------------
+    # Dataset definitions
+    # -----------------------------
     datasets = [
         ("cleaned_a", "Dataset A", st.session_state.get('cleaned_a_name', 'Dataset A')),
         ("cleaned_b", "Dataset B", st.session_state.get('cleaned_b_name', 'Dataset B'))
@@ -81,7 +138,7 @@ with tab2:
     if all(st.session_state.get(ds_name) is None for ds_name, _, _ in datasets):
         st.warning("Please upload at least one dataset in Tab 1 before cleaning.")
     else:
-        # Preview datasets that exist
+        # Preview uploaded datasets
         for ds_name, label, _ in datasets:
             df = st.session_state.get(ds_name)
             if isinstance(df, pd.DataFrame):
@@ -90,7 +147,9 @@ with tab2:
             else:
                 st.info(f"{label} is not uploaded or invalid. Skipping preview.")
 
+        # -----------------------------
         # Cleaning options
+        # -----------------------------
         cleaning_options = st.multiselect(
             "Select cleaning operations to apply",
             [
@@ -103,65 +162,45 @@ with tab2:
             default=["Drop duplicate rows"]
         )
 
-        # Custom names
+        # Custom dataset names
         custom_names = {
             "cleaned_a": st.text_input("Name Dataset A (optional)", value=st.session_state.get('cleaned_a_name', 'Dataset A')),
             "cleaned_b": st.text_input("Name Dataset B (optional)", value=st.session_state.get('cleaned_b_name', 'Dataset B'))
         }
 
+        # -----------------------------
+        # Run cleaning
+        # -----------------------------
         if st.button("Run Cleaning"):
             for ds_name, label, _ in datasets:
                 df = st.session_state.get(ds_name)
+                cleaned_df, ops = clean_dataset(df, label, cleaning_options)
 
-                # 1️⃣ HARD SAFETY CHECK: skip if dataset is None or invalid
-                if df is None or not isinstance(df, pd.DataFrame):
-                    st.info(f"{label} is missing or invalid. Skipping cleaning.")
-                    continue  # NEXT DATASET
+                if cleaned_df is not None:
+                    # Save results to session state
+                    st.session_state[ds_name] = cleaned_df
+                    st.session_state[f"{ds_name}_name"] = custom_names[ds_name]
+                    st.session_state[f"{ds_name}_operations"] = ops
+                    st.session_state[f"{ds_name}_saved"] = True
 
-                # 2️⃣ DEBUG: verify df type before any operation
-                st.write(f"DEBUG: Cleaning {label}, df type = {type(df)}")
+                    # Display summary
+                    new_shape = cleaned_df.shape
+                    st.subheader(f"{label} Cleaning Summary")
+                    if ops:
+                        st.write("**Changes applied:**")
+                        for op in ops:
+                            st.markdown(f"- {op}")
+                    else:
+                        st.info("No changes were necessary based on selected options.")
+                    st.write(f"**Original shape:** {df.shape}, **New shape:** {new_shape}")
+                    st.dataframe(cleaned_df.head())
+                else:
+                    st.info(f"{label} skipped.")
 
-                # 3️⃣ Safe: only now call select_dtypes
-                numeric_cols = df.select_dtypes(include=['number']).columns
-                cat_cols = df.select_dtypes(include=['object']).columns
-
-                applied_ops = []
-                original_shape = df.shape
-
-                # 4️⃣ Apply cleaning operations
-                if "Drop duplicate rows" in cleaning_options:
-                    before = len(df)
-                    df = df.drop_duplicates()
-                    if len(df) < before:
-                        applied_ops.append("Duplicate rows removed")
-
-                if "Fill missing numeric values with median" in cleaning_options:
-                    for col in numeric_cols:
-                        na_count = df[col].isna().sum()
-                        if na_count > 0:
-                            df[col].fillna(df[col].median(), inplace=True)
-                            applied_ops.append(f"Filled {na_count} missing numeric values in {col}")
-
-                if "Fill missing categorical values with mode" in cleaning_options:
-                    for col in cat_cols:
-                        na_count = df[col].isna().sum()
-                        if na_count > 0 and not df[col].mode().empty:
-                            df[col].fillna(df[col].mode()[0], inplace=True)
-                            applied_ops.append(f"Filled {na_count} missing categorical values in {col}")
-
-                if "Trim whitespace from string columns" in cleaning_options:
-                    for col in cat_cols:
-                        df[col] = df[col].apply(lambda x: x.strip() if isinstance(x, str) else x)
-                    applied_ops.append("Trimmed whitespace from string columns")
-
-                if "Remove columns with all nulls" in cleaning_options:
-                    all_null_cols = df.columns[df.isna().all()].tolist()
-                    if all_null_cols:
-                        df.drop(columns=all_null_cols, inplace=True)
-                        applied_ops.append(f"Removed {len(all_null_cols)} columns with all nulls")
-
-                # 5️⃣ Save cleaned dataset to session state
-                st.session_state[ds_name] = df
+        # Optional: debug session state
+        st.write("DEBUG: Session state types after cleaning")
+        st.write(f"cleaned_a type = {type(st.session_state.get('cleaned_a'))}")
+        st.write(f"cleaned_b type = {type(st.session_state.get('cleaned_b'))}")
 # Tab 3: EDA
 # -----------------------------
 with tab3:
