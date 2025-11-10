@@ -356,7 +356,6 @@ with tab4:
                     fig = px.bar(x=list(summary_data.keys()), y=list(summary_data.values()),
                                  title=f"{compare_type} Summary", labels={"x": "", "y": "Count"})
                     st.plotly_chart(fig, use_container_width=True)
-
 # -----------------------------
 # Tab 5: Export & Insights
 # -----------------------------
@@ -443,10 +442,33 @@ with tab5:
         if outlier_reports:
             combined_outliers = pd.concat(outlier_reports, ignore_index=True)
             st.dataframe(combined_outliers)
-
             st.metric("Total Outliers Detected", len(combined_outliers))
         else:
             st.info("No outliers detected.")
+
+    # --- Duplicate Rows ---
+    st.subheader("Duplicate Rows")
+
+    duplicate_reports = []
+    if df_a is not None:
+        duplicates_a = df_a[df_a.duplicated(keep=False)].copy()
+        if not duplicates_a.empty:
+            duplicates_a["Dataset"] = "Dataset A"
+            duplicate_reports.append(("Duplicates_A", duplicates_a))
+            st.metric("Dataset A Duplicate Rows", len(duplicates_a))
+            st.dataframe(duplicates_a.head())
+        else:
+            st.info("No duplicates found in Dataset A.")
+
+    if df_b is not None:
+        duplicates_b = df_b[df_b.duplicated(keep=False)].copy()
+        if not duplicates_b.empty:
+            duplicates_b["Dataset"] = "Dataset B"
+            duplicate_reports.append(("Duplicates_B", duplicates_b))
+            st.metric("Dataset B Duplicate Rows", len(duplicates_b))
+            st.dataframe(duplicates_b.head())
+        else:
+            st.info("No duplicates found in Dataset B.")
 
     # --- Excel Export ---
     st.subheader("Export Full Report")
@@ -471,6 +493,9 @@ with tab5:
                     combined_summary.to_excel(writer, index=False, sheet_name="HighLevel_Insights")
                 if outlier_reports:
                     combined_outliers.to_excel(writer, index=False, sheet_name="Outlier_Report")
+                if duplicate_reports:
+                    for sheet_name, dup_df in duplicate_reports:
+                        dup_df.to_excel(writer, index=False, sheet_name=sheet_name)
                 if compare_report is not None:
                     compare_report.to_excel(writer, index=True, sheet_name="Compare_Report")
 
@@ -482,4 +507,5 @@ with tab5:
             )
 
             st.success(f"Export created successfully: {export_name}")
+
 
