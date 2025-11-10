@@ -349,61 +349,114 @@ with tab5:
                                 outliers.to_excel(writer, sheet_name=f'Outliers_{ds_name[-1].upper()}', index=False)
             st.download_button("Download Excel Report", data=buffer.getvalue(), file_name=file_name, mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
             st.success(f"Exported: {', '.join(export_options)}")
-
 # -----------------------------
-# Tab 6: PDF / Data Summary
+# Tab 6: PDF Report
 # -----------------------------
-with tab6:
-    st.header("Custom PDF Summary")
+import matplotlib.pyplot as plt
+from fpdf import FPDF
+import base64
 
-    dataset_choice = st.selectbox("Select dataset", ["Dataset A", "Dataset B"])
-    df = st.session_state.cleaned_a if dataset_choice == "Dataset A" else st.session_state.cleaned_b
+with st.tab("PDF Report"):
+    st.header("Generate PDF Report")
 
-    if df is not None:
-        st.subheader(f"{dataset_choice} Preview")
-        st.dataframe(df.head())
+    dataset_choice = st.selectbox(
+        "Select dataset for PDF report",
+        ["Dataset A", "Dataset B"],
+        key="pdf_dataset"
+    )
 
-        summary_options = st.multiselect(
-            "Select items to include in PDF",
-            [
-                "Data Quality & Structure (Automatic)",
-                "Histograms / Boxplots",
-                "Top Categories (Categorical)",
-                "Skewness & Kurtosis",
-                "Correlation Heatmap",
-                "Outliers & Anomalies",
-                "Summary Alerts"
-            ],
-            default=["Data Quality & Structure (Automatic)"]
-        )
+    include_dtype_chart = st.checkbox("Include Data Types Pie Chart", value=False)
+    include_distributions = st.checkbox("Include Distribution Charts", value=True)
+    include_relationships = st.checkbox("Include Correlation Heatmap", value=True)
 
-        if st.button("Generate PDF"):
+    if st.button("Generate PDF", key="pdf_generate"):
+        # Select dataset
+        df = st.session_state.cleaned_a if dataset_choice == "Dataset A" else st.session_state.cleaned_b
+        if df is None:
+            st.warning("Selected dataset is empty.")
+        else:
             pdf = FPDF()
             pdf.set_auto_page_break(auto=True, margin=15)
             pdf.add_page()
             pdf.set_font("Arial", "B", 16)
-            pdf.cell(0, 10, f"DataLens PDF Summary - {dataset_choice}", ln=True)
-            pdf.set_font("Arial", "", 12)
-            pdf.cell(0, 8, f"Generated on {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}", ln=True)
+            pdf.cell(0, 10, f"{dataset_choice} - DataLens PDF Report", ln=True, align="C")
+            pdf.ln(10)
 
             # --- Data Quality & Structure ---
-            if "Data Quality & Structure (Automatic)" in summary_options:
-                pdf.ln(5)
-                pdf.set_font("Arial", "B", 14)
-                pdf.cell(0, 8, "Data Quality & Structure", ln=True)
-                pdf.set_font("Arial", "", 12)
-                pdf.multi_cell(0, 6, f"Rows: {df.shape[0]}, Columns: {df.shape[1]}")
-                missing = df.isna().sum()
-                missing_pct = round(df.isna().mean()*100, 2)
-                pdf.multi_cell(0, 6, f"Missing Values:\n{missing.to_dict()}\nPercent Missing:\n{missing_pct.to_dict()}")
-                duplicates = df[df.duplicated(keep=False)]
-                pdf.multi_cell(0, 6, f"Duplicate Rows: {len(duplicates)}")
-                pdf.multi_cell(0, 6, f"Data Types:\n{df.dtypes.apply(lambda x: x.name).to_dict()}")
+            pdf.set_font("Arial", "B", 12)
+            pdf.cell(0, 10, "1. Data Quality & Structure", ln=True)
+            pdf.set_font("Arial", "", 11)
+            pdf.cell(0, 8, f"Rows: {df.shape[0]}, Columns: {df.shape[1]}", ln=True)
+            missing_summary = df.isna().sum()
+            for col, na_count in missing_summary.items():
+                if na_count > 0:
+                    pdf.cell(0, 8, f"Missing in '{col}': {na_count} ({na_count/len(df)*100:.1f}%)", ln=True)
+            duplicate_rows = df.duplicated().sum()
+            if duplicate_rows > 0:
+                pdf.cell(0, 8, f"Duplicate rows: {duplicate_rows}", ln=True)
+            pdf.ln(5)
+            pdf.cell(0, 8, f"Data Types: {df.dtypes.to_dict()}", ln=True)
+            pdf.ln(10)
 
-            # Future: Add other sections like plots or alerts (requires saving plots as images and adding to PDF)
+            # --- Data Types Visualization ---
+            if include_dtype_chart:
+                dtype_counts = df.dtypes.value_counts()
+                plt.figure(figsize=(4,4))
+                dtype_counts.plot.pie(autopct="%1.1f%%", legend=False)
+                plt.ylabel("")
+                plt.tight_layout()
+                plt.savefig("dtype_chart.png")
+                pdf.image("dtype_chart.png", w=100)
+                pdf.ln(10)
 
+            # --- Outliers & Anomalies ---
+            pdf.set_font("Arial", "B", 12)
+            pdf.cell(0, 10, "2. Outliers & Anomalies", ln=True)
+            pdf.set_font("Arial", "", 11)
+            numeric_cols = df.select_dtypes(include="number").columns
+            for col in numeric_cols:
+                Q1 = df[col].quantile(0.25)
+                Q3 = df[col].quantile(0.75)
+                IQR = Q3 - Q1
+                outliers = df[(df[col] < Q1 - 1.5*IQR) | (df[col] > Q3 + 1.5*IQR)]
+                pdf.cell(0, 8, f"{col}: {len(outliers)} outliers", ln=True)
+            pdf.ln(5)
+
+            # --- Distribution Insights ---
+            if include_distributions:
+                pdf.set_font("Arial", "B", 12)
+                pdf.cell(0, 10, "3. Distribution Insights", ln=True)
+                pdf.set_font("Arial", "", 11)
+                for col in numeric_cols:
+                    plt.figure()
+                    df[col].hist(bins=15)
+                    plt.title(f"Histogram: {col}")
+                    plt.tight_layout()
+                    plt.savefig(f"hist_{col}.png")
+                    pdf.image(f"hist_{col}.png", w=100)
+                    pdf.ln(5)
+
+            # --- Relationships / Correlation ---
+            if include_relationships and len(numeric_cols) > 1:
+                pdf.set_font("Arial", "B", 12)
+                pdf.cell(0, 10, "4. Correlation Heatmap", ln=True)
+                corr = df[numeric_cols].corr()
+                plt.figure(figsize=(5,4))
+                import seaborn as sns
+                sns.heatmap(corr, annot=True, fmt=".2f", cmap="coolwarm")
+                plt.tight_layout()
+                plt.savefig("corr_heatmap.png")
+                pdf.image("corr_heatmap.png", w=150)
+                pdf.ln(10)
+
+            # --- Output PDF to Streamlit ---
             buffer = io.BytesIO()
             pdf.output(buffer)
-            st.download_button("Download PDF Summary", data=buffer.getvalue(), file_name=f"{dataset_choice}_Summary.pdf", mime="application/pdf")
-    else:
-        st.warning("Please upload and clean the dataset first.")
+            buffer.seek(0)
+            st.download_button(
+                "Download PDF Report",
+                data=buffer,
+                file_name=f"{dataset_choice}_DataLens_Report.pdf",
+                mime="application/pdf"
+            )
+            st.success("PDF report generated!")
