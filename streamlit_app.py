@@ -19,8 +19,8 @@ for key in ["cleaned_a", "cleaned_b", "compare_report", "model", "model_metrics"
 # -----------------------------
 # Tabs
 # -----------------------------
-tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
-    "Upload", "Cleaning", "EDA", "Compare & Contrast", "Modeling", "Explainability", "Export"
+tab1, tab2, tab3, tab4, tab5 = st.tabs([
+    "Upload", "Cleaning", "EDA", "Compare & Contrast", "Export"
 ])
 
 # -----------------------------
@@ -363,76 +363,6 @@ with tab4:
                     fig = px.bar(x=list(summary_data.keys()), y=list(summary_data.values()),
                                  title=f"{compare_type} Summary", labels={"x": "", "y": "Count"})
                     st.plotly_chart(fig, use_container_width=True)
-
-# -----------------------------
-# Tab 5: Modeling
-# -----------------------------
-with tab5:
-    st.header("Modeling & Prediction")
-
-    if st.session_state.cleaned_a is not None:
-        target_column = st.selectbox(
-            "Select target column",
-            st.session_state.cleaned_a.columns,
-            key="model_target"
-        )
-        feature_columns = st.multiselect(
-            "Select feature columns",
-            [c for c in st.session_state.cleaned_a.columns if c != target_column],
-            default=[c for c in st.session_state.cleaned_a.columns if c != target_column],
-            key="model_features"
-        )
-
-        model_choice = st.selectbox(
-            "Select model",
-            ["Random Forest", "Logistic Regression"],
-            key="model_choice"
-        )
-        test_size = st.slider("Test set size (%)", 10, 50, 20, key="test_size")
-        n_estimators = st.slider("Random Forest n_estimators", 50, 500, 100, key="rf_estimators") if model_choice=="Random Forest" else None
-
-        if st.button("Train Model", key="train_model"):
-            df = st.session_state.cleaned_a.dropna(subset=[target_column]+feature_columns)
-            X = pd.get_dummies(df[feature_columns])
-            y = df[target_column]
-            X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=test_size/100, random_state=42)
-            if model_choice=="Random Forest":
-                model = RandomForestClassifier(n_estimators=n_estimators, random_state=42)
-            else:
-                from sklearn.linear_model import LogisticRegression
-                model = LogisticRegression(max_iter=500)
-            model.fit(X_train, y_train)
-            y_pred = model.predict(X_test)
-            acc = accuracy_score(y_test, y_pred)
-            rmse = mean_squared_error(y_test, y_pred, squared=False)
-            st.session_state.model_metrics = pd.DataFrame({'Metric': ['Accuracy', 'RMSE'], 'Value':[acc, rmse]})
-            st.session_state.model = model
-            st.session_state.X_train, st.session_state.X_test = X_train, X_test
-            st.session_state.y_train, st.session_state.y_test = y_train, y_test
-            st.subheader("Model Metrics")
-            st.dataframe(st.session_state.model_metrics)
-
-            st.subheader("Confusion Matrix")
-            cm = confusion_matrix(y_test, y_pred)
-            fig = px.imshow(cm, text_auto=True, labels=dict(x="Predicted", y="Actual"), title="Confusion Matrix")
-            st.plotly_chart(fig)
-
-            if model_choice=="Random Forest":
-                importances = pd.Series(model.feature_importances_, index=X_train.columns).sort_values(ascending=False)
-                st.subheader("Feature Importances")
-                fig2 = px.bar(importances.head(10), x=importances.head(10).index, y=importances.head(10).values, title="Top 10 Features")
-                st.plotly_chart(fig2)
-
-# -----------------------------
-# Tab 6: Explainability
-# -----------------------------
-with tab6:
-    st.header("Explainability")
-    if st.button("Show Explainability", key="show_shap"):
-        if st.session_state.model is not None:
-            st.info("SHAP explainability logic goes here.")
-        else:
-            st.warning("Train a model first.")
 
 # -----------------------------
 # Tab 7: Export
