@@ -71,94 +71,105 @@ with tab1:
 with tab2:
     st.header("Data Cleaning")
 
-    # Preview datasets
-    for ds_name, label in [("cleaned_a", "Dataset A"), ("cleaned_b", "Dataset B")]:
-        df = st.session_state.get(ds_name)
-        if df is not None:
-            st.subheader(f"{label} Preview")
-            st.dataframe(df.head())
-
-    # Cleaning options
-    cleaning_options = st.multiselect(
-        "Select cleaning operations to apply",
-        [
-            "Drop duplicate rows",
-            "Fill missing numeric values with median",
-            "Fill missing categorical values with mode",
-            "Trim whitespace from string columns",
-            "Remove columns with all nulls"
-        ],
-        default=["Drop duplicate rows"]
-    )
-
-    # Custom names
-    custom_name_a = st.text_input("Name Dataset A (optional)", value=st.session_state.get('cleaned_a_name', 'Dataset A'))
-    custom_name_b = st.text_input("Name Dataset B (optional)", value=st.session_state.get('cleaned_b_name', 'Dataset B'))
-
-    if st.button("Run Cleaning"):
-        for ds_name, label, custom_name in [
-            ("cleaned_a", "Dataset A", custom_name_a),
-            ("cleaned_b", "Dataset B", custom_name_b)
-        ]:
+    # Ensure datasets are uploaded
+    if st.session_state.cleaned_a is None and st.session_state.cleaned_b is None:
+        st.warning("Please upload datasets in Tab 1 before cleaning.")
+    else:
+        # Preview datasets
+        for ds_name, label in [("cleaned_a", "Dataset A"), ("cleaned_b", "Dataset B")]:
             df = st.session_state.get(ds_name)
-            if df is None:
-                continue
+            if df is not None:
+                st.subheader(f"{label} Preview")
+                st.dataframe(df.head())
 
-            original_shape = df.shape
-            applied_ops = []
+        # Cleaning options
+        cleaning_options = st.multiselect(
+            "Select cleaning operations to apply",
+            [
+                "Drop duplicate rows",
+                "Fill missing numeric values with median",
+                "Fill missing categorical values with mode",
+                "Trim whitespace from string columns",
+                "Remove columns with all nulls"
+            ],
+            default=["Drop duplicate rows"]
+        )
 
-            # Cleaning operations
-            if "Drop duplicate rows" in cleaning_options:
-                before = len(df)
-                df = df.drop_duplicates()
-                after = len(df)
-                if after < before:
-                    applied_ops.append("Duplicate rows removed")
+        # Custom names
+        custom_name_a = st.text_input(
+            "Name Dataset A (optional)",
+            value=st.session_state.get('cleaned_a_name', 'Dataset A')
+        )
+        custom_name_b = st.text_input(
+            "Name Dataset B (optional)",
+            value=st.session_state.get('cleaned_b_name', 'Dataset B')
+        )
 
-            if "Fill missing numeric values with median" in cleaning_options:
-                num_cols = df.select_dtypes(include=['number']).columns
-                for col in num_cols:
-                    na_count = df[col].isna().sum()
-                    if na_count > 0:
-                        df[col].fillna(df[col].median(), inplace=True)
-                        applied_ops.append(f"Filled {na_count} missing numeric values in {col}")
+        if st.button("Run Cleaning"):
+            for ds_name, label, custom_name in [
+                ("cleaned_a", "Dataset A", custom_name_a),
+                ("cleaned_b", "Dataset B", custom_name_b)
+            ]:
+                df = st.session_state.get(ds_name)
+                if df is None:
+                    continue
 
-            if "Fill missing categorical values with mode" in cleaning_options:
-                cat_cols = df.select_dtypes(include=['object']).columns
-                for col in cat_cols:
-                    na_count = df[col].isna().sum()
-                    if na_count > 0 and not df[col].mode().empty:
-                        df[col].fillna(df[col].mode()[0], inplace=True)
-                        applied_ops.append(f"Filled {na_count} missing categorical values in {col}")
+                original_shape = df.shape
+                applied_ops = []
 
-            if "Trim whitespace from string columns" in cleaning_options:
-                str_cols = df.select_dtypes(include=['object']).columns
-                for col in str_cols:
-                    df[col] = df[col].apply(lambda x: x.strip() if isinstance(x, str) else x)
-                applied_ops.append("Trimmed whitespace from string columns")
+                # Cleaning operations
+                if "Drop duplicate rows" in cleaning_options:
+                    before = len(df)
+                    df = df.drop_duplicates()
+                    after = len(df)
+                    if after < before:
+                        applied_ops.append("Duplicate rows removed")
 
-            if "Remove columns with all nulls" in cleaning_options:
-                all_null_cols = df.columns[df.isna().all()].tolist()
-                if all_null_cols:
-                    df.drop(columns=all_null_cols, inplace=True)
-                    applied_ops.append(f"Removed {len(all_null_cols)} columns with all nulls")
+                if "Fill missing numeric values with median" in cleaning_options:
+                    num_cols = df.select_dtypes(include=['number']).columns
+                    for col in num_cols:
+                        na_count = df[col].isna().sum()
+                        if na_count > 0:
+                            df[col].fillna(df[col].median(), inplace=True)
+                            applied_ops.append(f"Filled {na_count} missing numeric values in {col}")
 
-            # Save cleaned dataset
-            st.session_state[ds_name] = df
-            st.session_state[f"{ds_name}_name"] = custom_name
-            st.session_state[f"{ds_name}_operations"] = applied_ops
+                if "Fill missing categorical values with mode" in cleaning_options:
+                    cat_cols = df.select_dtypes(include=['object']).columns
+                    for col in cat_cols:
+                        na_count = df[col].isna().sum()
+                        if na_count > 0 and not df[col].mode().empty:
+                            df[col].fillna(df[col].mode()[0], inplace=True)
+                            applied_ops.append(f"Filled {na_count} missing categorical values in {col}")
 
-            # Display cleaning summary
-            new_shape = df.shape
-            st.subheader(f"{label} Cleaning Summary")
-            if applied_ops:
-                st.write("**Changes applied:**")
-                for op in applied_ops:
-                    st.markdown(f"- {op}")
-            else:
-                st.info("No changes were necessary based on selected options.")
-            st.write(f"**Original shape:** {original_shape}, **New shape:** {new_shape}")
-            st.dataframe(df.head())
+                if "Trim whitespace from string columns" in cleaning_options:
+                    str_cols = df.select_dtypes(include=['object']).columns
+                    for col in str_cols:
+                        df[col] = df[col].apply(lambda x: x.strip() if isinstance(x, str) else x)
+                    applied_ops.append("Trimmed whitespace from string columns")
+
+                if "Remove columns with all nulls" in cleaning_options:
+                    all_null_cols = df.columns[df.isna().all()].tolist()
+                    if all_null_cols:
+                        df.drop(columns=all_null_cols, inplace=True)
+                        applied_ops.append(f"Removed {len(all_null_cols)} columns with all nulls")
+
+                # Save cleaned dataset
+                st.session_state[ds_name] = df
+                st.session_state[f"{ds_name}_name"] = custom_name
+                st.session_state[f"{ds_name}_operations"] = applied_ops
+                st.session_state[f"{ds_name}_saved"] = True  # mark cleaning step as done
+
+                # Display cleaning summary
+                new_shape = df.shape
+                st.subheader(f"{label} Cleaning Summary")
+                if applied_ops:
+                    st.write("**Changes applied:**")
+                    for op in applied_ops:
+                        st.markdown(f"- {op}")
+                else:
+                    st.info("No changes were necessary based on selected options.")
+                st.write(f"**Original shape:** {original_shape}, **New shape:** {new_shape}")
+                st.dataframe(df.head())
 # -----------------------------
 # Tab 3: EDA
 # -----------------------------
