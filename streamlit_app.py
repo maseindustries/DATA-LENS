@@ -366,8 +366,6 @@ with tab5:
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             )
             st.success(f"Exported: {', '.join(export_options)}")
-
-
 # -----------------------------
 # Tab 6: PDF Summary
 # -----------------------------
@@ -416,7 +414,8 @@ with tab6:
             # Automatic Insights
             pdf.ln(2)
             insights = []
-            for col in df.select_dtypes(include='number').columns:
+            numeric_cols = df.select_dtypes(include='number').columns
+            for col in numeric_cols:
                 median = desc.loc[col, '50%']
                 max_val = desc.loc[col, 'max']
                 if max_val > median * 3:
@@ -427,31 +426,34 @@ with tab6:
 
             # Optional: Correlation Heatmap
             if include_corr:
-                pdf.add_page()
-                pdf.set_font("Arial", 'B', 12)
-                pdf.cell(0, 10, "Correlation Heatmap", ln=True)
-                corr = df.corr()
-                plt.figure(figsize=(6,5))
-                plt.imshow(corr, cmap='coolwarm', vmin=-1, vmax=1)
-                plt.colorbar()
-                plt.xticks(range(len(corr)), corr.columns, rotation=90)
-                plt.yticks(range(len(corr)), corr.columns)
-                plt.tight_layout()
-                buf = io.BytesIO()
-                plt.savefig(buf, format='png')
-                plt.close()
-                buf.seek(0)
-                pdf.image(buf, x=10, w=180)
+                if numeric_cols.empty:
+                    st.warning("No numeric columns available for correlation heatmap.")
+                else:
+                    pdf.add_page()
+                    pdf.set_font("Arial", 'B', 12)
+                    pdf.cell(0, 10, "Correlation Heatmap", ln=True)
+                    corr = df[numeric_cols].corr()
+                    plt.figure(figsize=(6,5))
+                    plt.imshow(corr, cmap='coolwarm', vmin=-1, vmax=1)
+                    plt.colorbar()
+                    plt.xticks(range(len(corr)), corr.columns, rotation=90)
+                    plt.yticks(range(len(corr)), corr.columns)
+                    plt.tight_layout()
+                    buf = io.BytesIO()
+                    plt.savefig(buf, format='png')
+                    plt.close()
+                    buf.seek(0)
+                    pdf.image(buf, x=10, w=180)
 
-                # Correlation insights
-                pdf.set_font("Arial", 'I', 10)
-                strong_corrs = []
-                for i in corr.columns:
-                    for j in corr.columns:
-                        if i != j and abs(corr.loc[i,j]) > 0.7:
-                            strong_corrs.append(f"{i} ↔ {j} (r={corr.loc[i,j]:.2f})")
-                if strong_corrs:
-                    pdf.multi_cell(0, 5, "Strong correlations:\n" + "\n".join(strong_corrs))
+                    # Correlation insights
+                    pdf.set_font("Arial", 'I', 10)
+                    strong_corrs = []
+                    for i in corr.columns:
+                        for j in corr.columns:
+                            if i != j and abs(corr.loc[i,j]) > 0.7:
+                                strong_corrs.append(f"{i} ↔ {j} (r={corr.loc[i,j]:.2f})")
+                    if strong_corrs:
+                        pdf.multi_cell(0, 5, "Strong correlations:\n" + "\n".join(strong_corrs))
 
             # Optional: Charts / Visuals placeholder
             if include_charts:
@@ -472,3 +474,4 @@ with tab6:
                 mime="application/pdf"
             )
             st.success("PDF generated successfully!")
+
