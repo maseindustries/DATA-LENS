@@ -336,27 +336,34 @@ with tab5:
     st.header("Export Reports")
 
     # Safely get datasets
-    df_a = st.session_state['cleaned_a_saved'] if st.session_state.get('cleaned_a_saved') is not None else st.session_state.get('cleaned_a')
-    df_b = st.session_state['cleaned_b_saved'] if st.session_state.get('cleaned_b_saved') is not None else st.session_state.get('cleaned_b')
+    df_a = st.session_state.get('cleaned_a_saved') or st.session_state.get('cleaned_a')
+    df_b = st.session_state.get('cleaned_b_saved') or st.session_state.get('cleaned_b')
 
     name_a = st.session_state.get('cleaned_a_name', 'Dataset A')
     name_b = st.session_state.get('cleaned_b_name', 'Dataset B')
 
-    # Build dynamic export options based on cleaning operations
+    # Safely get cleaning operations as lists
+    cleaned_a_ops = st.session_state.get('cleaned_a_operations')
+    if not isinstance(cleaned_a_ops, list):
+        cleaned_a_ops = []
+
+    cleaned_b_ops = st.session_state.get('cleaned_b_operations')
+    if not isinstance(cleaned_b_ops, list):
+        cleaned_b_ops = []
+
+    # Build dynamic export options
     export_options = []
 
+    # Include cleaned dataset first
     if df_a is not None:
-        for op in st.session_state.get('cleaned_a_operations', []):
+        export_options.append(f"Cleaned {name_a}")
+        for op in cleaned_a_ops:
             export_options.append(f"{name_a} - {op}")
-    if df_b is not None:
-        for op in st.session_state.get('cleaned_b_operations', []):
-            export_options.append(f"{name_b} - {op}")
 
-    # Always include cleaned datasets
-    if df_a is not None:
-        export_options.insert(0, f"Cleaned {name_a}")
     if df_b is not None:
-        export_options.insert(1, f"Cleaned {name_b}")
+        export_options.append(f"Cleaned {name_b}")
+        for op in cleaned_b_ops:
+            export_options.append(f"{name_b} - {op}")
 
     selected_exports = st.multiselect(
         "Select items to export to Excel",
@@ -365,7 +372,7 @@ with tab5:
 
     file_name = st.text_input("Export file name", value="DataLens_Report.xlsx")
 
-    # Helper function for detecting outliers
+    # Helper function to detect outliers
     def detect_outliers(df):
         numeric_cols = df.select_dtypes(include=['number']).columns
         if numeric_cols.empty:
@@ -379,6 +386,7 @@ with tab5:
             outlier_rows = pd.concat([outlier_rows, df[mask]])
         return outlier_rows.drop_duplicates()
 
+    # Export button
     if st.button("Export Selected"):
         if not selected_exports:
             st.warning("Select at least one item to export.")
@@ -386,25 +394,37 @@ with tab5:
             buffer = io.BytesIO()
             with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
                 for item in selected_exports:
+                    # Dataset A exports
                     if df_a is not None and item.startswith(name_a):
                         if item == f"Cleaned {name_a}":
                             df_a.to_excel(writer, sheet_name=f"Cleaned_{name_a}", index=False)
                         elif "outlier" in item.lower():
-                            detect_outliers(df_a).to_excel(writer, sheet_name=f"Outliers_{name_a}", index=False)
+                            outliers = detect_outliers(df_a)
+                            if not outliers.empty:
+                                outliers.to_excel(writer, sheet_name=f"Outliers_{name_a}", index=False)
                         elif "duplicate" in item.lower():
-                            df_a[df_a.duplicated(keep=False)].to_excel(writer, sheet_name=f"Duplicates_{name_a}", index=False)
+                            duplicates = df_a[df_a.duplicated(keep=False)]
+                            if not duplicates.empty:
+                                duplicates.to_excel(writer, sheet_name=f"Duplicates_{name_a}", index=False)
                         else:
                             # Any other cleaning operation placeholder
-                            df_a.to_excel(writer, sheet_name=item[:31], index=False)  # Sheet name max 31 chars
+                            df_a.to_excel(writer, sheet_name=item[:31], index=False)  # Excel sheet name max 31 chars
+
+                    # Dataset B exports
                     if df_b is not None and item.startswith(name_b):
                         if item == f"Cleaned {name_b}":
                             df_b.to_excel(writer, sheet_name=f"Cleaned_{name_b}", index=False)
                         elif "outlier" in item.lower():
-                            detect_outliers(df_b).to_excel(writer, sheet_name=f"Outliers_{name_b}", index=False)
+                            outliers = detect_outliers(df_b)
+                            if not outliers.empty:
+                                outliers.to_excel(writer, sheet_name=f"Outliers_{name_b}", index=False)
                         elif "duplicate" in item.lower():
-                            df_b[df_b.duplicated(keep=False)].to_excel(writer, sheet_name=f"Duplicates_{name_b}", index=False)
+                            duplicates = df_b[df_b.duplicated(keep=False)]
+                            if not duplicates.empty:
+                                duplicates.to_excel(writer, sheet_name=f"Duplicates_{name_b}", index=False)
                         else:
                             df_b.to_excel(writer, sheet_name=item[:31], index=False)
+
             st.download_button(
                 "Download Excel Report",
                 data=buffer.getvalue(),
@@ -412,6 +432,7 @@ with tab5:
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             )
             st.success(f"Exported: {', '.join(selected_exports)}")
+
 # -----------------------------
 # Tab 6: PDF Report
 # -----------------------------
