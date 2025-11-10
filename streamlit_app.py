@@ -72,10 +72,10 @@ with tab2:
     st.header("Data Cleaning")
 
     # -----------------------------
-    # Helper function for safe cleaning
+    # Safe cleaning function
     # -----------------------------
     def clean_dataset(df, label, cleaning_options):
-        # Safety check
+        # HARD safety check
         if df is None or not isinstance(df, pd.DataFrame):
             st.info(f"{label} is missing or invalid. Skipping cleaning.")
             return None, []
@@ -91,7 +91,7 @@ with tab2:
         original_shape = df.shape
 
         # -----------------------------
-        # Apply cleaning operations
+        # Cleaning operations
         # -----------------------------
         if "Drop duplicate rows" in cleaning_options:
             before = len(df)
@@ -127,18 +127,20 @@ with tab2:
         return df, applied_ops
 
     # -----------------------------
-    # Dataset definitions
+    # Datasets
     # -----------------------------
     datasets = [
         ("cleaned_a", "Dataset A", st.session_state.get('cleaned_a_name', 'Dataset A')),
         ("cleaned_b", "Dataset B", st.session_state.get('cleaned_b_name', 'Dataset B'))
     ]
 
-    # Check if at least one dataset exists
+    # -----------------------------
+    # Check at least one dataset exists
+    # -----------------------------
     if all(st.session_state.get(ds_name) is None for ds_name, _, _ in datasets):
         st.warning("Please upload at least one dataset in Tab 1 before cleaning.")
     else:
-        # Preview uploaded datasets
+        # Preview datasets
         for ds_name, label, _ in datasets:
             df = st.session_state.get(ds_name)
             if isinstance(df, pd.DataFrame):
@@ -177,7 +179,7 @@ with tab2:
                 cleaned_df, ops = clean_dataset(df, label, cleaning_options)
 
                 if cleaned_df is not None:
-                    # Save results to session state
+                    # Save to session state
                     st.session_state[ds_name] = cleaned_df
                     st.session_state[f"{ds_name}_name"] = custom_names[ds_name]
                     st.session_state[f"{ds_name}_operations"] = ops
@@ -197,7 +199,9 @@ with tab2:
                 else:
                     st.info(f"{label} skipped.")
 
-        # Optional: debug session state
+        # -----------------------------
+        # Optional debug
+        # -----------------------------
         st.write("DEBUG: Session state types after cleaning")
         st.write(f"cleaned_a type = {type(st.session_state.get('cleaned_a'))}")
         st.write(f"cleaned_b type = {type(st.session_state.get('cleaned_b'))}")
