@@ -515,6 +515,20 @@ with tab5:
                 name = f"chart_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png"
                 st.download_button("Download chart PNG", data=png, file_name=name, mime="image/png")
 
+
+                pdf.ln(5)
+
+            # Output PDF as UTF-8 bytes
+            out_bytes = pdf.output(dest='S').encode('utf-8')
+            pdf_file_name = f"{file_name}_DataLens_Report.pdf"
+            st.download_button(
+                "Download PDF Report",
+                data=out_bytes,
+                file_name=pdf_file_name,
+                mime="application/pdf"
+            )
+            st.success("PDF report generated successfully!")
+
 # -----------------------------
 # Tab 6: PDF Report
 # -----------------------------
@@ -526,7 +540,11 @@ with tab6:
         ["Dataset A", "Dataset B"]
     )
     df = st.session_state.cleaned_a if dataset_choice == "Dataset A" else st.session_state.cleaned_b
-    file_name = st.session_state.get('uploaded_file_a').name if dataset_choice == "Dataset A" else st.session_state.get('uploaded_file_b').name
+
+    # Safely get the uploaded file name
+    uploaded_file = st.session_state.get('uploaded_file_a') if dataset_choice == "Dataset A" else st.session_state.get('uploaded_file_b')
+    file_name = uploaded_file.name if uploaded_file is not None else dataset_choice
+
     if df is None:
         st.warning("Please upload and clean the dataset first.")
     else:
@@ -617,7 +635,6 @@ with tab6:
             if "Charts" in pdf_sections and last_fig is not None:
                 pdf.set_font("Arial", 'B', 12)
                 pdf.cell(0, 10, "Charts", ln=True)
-                # Save the figure temporarily as PNG
                 chart_file = "temp_chart.png"
                 last_fig.write_image(chart_file)
                 pdf.image(chart_file, x=10, w=180)
@@ -637,7 +654,7 @@ with tab6:
                 if len(numeric_cols) > 0:
                     high_corr = corr.abs().unstack().sort_values(ascending=False)
                     high_corr = high_corr[high_corr < 1].drop_duplicates()
-                    if not high_corr.empty:
+                    if not high_corr.empty and high_corr.iloc[0] > 0.8:
                         insights.append(f"There are numeric columns with strong correlations (>|0.8|) worth investigating.")
                 if not insights:
                     insights.append("The dataset appears clean and ready for analysis.")
@@ -654,3 +671,4 @@ with tab6:
                 mime="application/pdf"
             )
             st.success("PDF report generated successfully!")
+
