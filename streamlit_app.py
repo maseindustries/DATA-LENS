@@ -213,11 +213,8 @@ with tab3:
 with tab4:
     st.header("Compare & Contrast")
 
-    # Safely get datasets
-    df_a = st.session_state['cleaned_a_saved'] if 'cleaned_a_saved' in st.session_state and st.session_state['cleaned_a_saved'] is not None else st.session_state.get('cleaned_a')
-    df_b = st.session_state['cleaned_b_saved'] if 'cleaned_b_saved' in st.session_state and st.session_state['cleaned_b_saved'] is not None else st.session_state.get('cleaned_b')
-    name_a = st.session_state.get('cleaned_a_name') or "Dataset A"
-    name_b = st.session_state.get('cleaned_b_name') or "Dataset B"
+    df_a = st.session_state['cleaned_a_saved'] if st.session_state.get('cleaned_a_saved') is not None else st.session_state.get('cleaned_a')
+    df_b = st.session_state['cleaned_b_saved'] if st.session_state.get('cleaned_b_saved') is not None else st.session_state.get('cleaned_b')
 
     if df_a is None and df_b is None:
         st.warning("Upload and clean at least one dataset first.")
@@ -247,19 +244,17 @@ with tab4:
                 similarity = overlap / total * 100 if total else 0
 
                 report = pd.DataFrame({
-                    f'Only in {name_a} ({key_col})': list(only_in_a) + [None]*(max(len(only_in_a), len(only_in_b)) - len(only_in_a)),
-                    f'Only in {name_b} ({key_col})': list(only_in_b) + [None]*(max(len(only_in_a), len(only_in_b)) - len(only_in_b))
+                    f'Only in A ({key_col})': list(only_in_a) + [None]*(max(len(only_in_a), len(only_in_b)) - len(only_in_a)),
+                    f'Only in B ({key_col})': list(only_in_b) + [None]*(max(len(only_in_a), len(only_in_b)) - len(only_in_b))
                 })
 
                 st.metric("Row Match Rate", f"{similarity:.1f}%")
-                explanation = (
-                    f"{len(only_in_a)} unique rows only in {name_a}, {len(only_in_b)} only in {name_b}, {overlap} rows appear in both."
-                )
+                explanation = f"{len(only_in_a)} unique rows only in A, {len(only_in_b)} only in B, {overlap} rows appear in both."
 
             # Schema compare
-            elif compare_type == 'Schema compare' and df_a is not None and df_b is not None:
-                cols_a = set(df_a.columns)
-                cols_b = set(df_b.columns)
+            elif compare_type == 'Schema compare':
+                cols_a = set(df_a.columns) if df_a is not None else set()
+                cols_b = set(df_b.columns) if df_b is not None else set()
                 cols_only_a = list(cols_a - cols_b)
                 cols_only_b = list(cols_b - cols_a)
                 shared_cols = len(cols_a.intersection(cols_b))
@@ -270,19 +265,19 @@ with tab4:
                 cols_only_a += [None] * (max_len - len(cols_only_a))
                 cols_only_b += [None] * (max_len - len(cols_only_b))
                 report = pd.DataFrame({
-                    f'Columns only in {name_a}': cols_only_a,
-                    f'Columns only in {name_b}': cols_only_b
+                    'Columns only in A': cols_only_a,
+                    'Columns only in B': cols_only_b
                 })
 
                 st.metric("Schema Match Rate", f"{similarity:.1f}%")
-                explanation = f"{shared_cols} columns shared, {len(cols_only_a)} unique to {name_a}, {len(cols_only_b)} unique to {name_b}."
+                explanation = f"{shared_cols} columns shared, {len(cols_only_a)} unique to A, {len(cols_only_b)} unique to B."
 
             # Cell-by-cell comparison
             elif compare_type == 'Cell-by-cell comparison' and df_a is not None and df_b is not None:
+                numeric_cols = df_a.select_dtypes(include=['number']).columns.intersection(df_b.select_dtypes(include=['number']).columns)
                 diffs = []
                 total_diff = 0
-                shared_cols = common_cols
-                for col in shared_cols:
+                for col in numeric_cols.union(common_cols):
                     col_a = df_a[col].iloc[:min(len(df_a), len(df_b))]
                     col_b = df_b[col].iloc[:min(len(df_a), len(df_b))]
                     mismatch = (col_a.fillna("NA") != col_b.fillna("NA"))
@@ -297,26 +292,32 @@ with tab4:
 
                 report = pd.DataFrame(diffs).sort_values(by="Mismatched Count", ascending=False)
                 st.bar_chart(report.set_index("Column")["Mismatched Count"])
-                explanation = f"Compared {len(shared_cols)} columns; found {total_diff} differing cells."
+                explanation = f"Compared {len(common_cols)} columns; found {total_diff} differing cells."
 
             # Summary compare
             elif compare_type == 'Summary compare':
-                dfs = []
                 if df_a is not None:
                     summary_a = df_a.describe(include='all').transpose()
-                    summary_a.columns = [f"{c}_A" for c in summary_a.columns]
-                    dfs.append(summary_a)
+                else:
+                    summary_a = pd.DataFrame()
                 if df_b is not None:
                     summary_b = df_b.describe(include='all').transpose()
-                    summary_b.columns = [f"{c}_B" for c in summary_b.columns]
-                    dfs.append(summary_b)
-                report = pd.concat(dfs, axis=1)
+                else:
+                    summary_b = pd.DataFrame()
+                combined = summary_a.join(summary_b, lsuffix='_A', rsuffix='_B', how='outer')
+                combined['Mean Difference (if numeric)'] = combined.apply(
+                    lambda r: round(r.get('mean_A', 0) - r.get('mean_B', 0), 3) if pd.notna(r.get('mean_A')) and pd.notna(r.get('mean_B')) else None,
+                    axis=1
+                )
+                report = combined
                 explanation = "Side-by-side summary statistics comparison."
 
+            # Display
             if report is not None:
                 st.session_state.compare_report = report
                 st.markdown(f"**Summary:** {explanation}")
                 st.dataframe(report, use_container_width=True)
+
 
 # -----------------------------
 # Tab 5: Export
@@ -325,7 +326,7 @@ with tab5:
     st.header("Export Reports")
     export_options = st.multiselect(
         "Select items to export to Excel",
-        [name_a, name_b, 'Duplicates', 'Outliers']
+        ['Cleaned Dataset A', 'Cleaned Dataset B', 'Duplicates', 'Outliers']
     )
     file_name = st.text_input("Export file name", value="DataLens_Report.xlsx")
 
@@ -348,35 +349,40 @@ with tab5:
         else:
             buffer = io.BytesIO()
             with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
-                if name_a in export_options and df_a is not None:
-                    df_a.to_excel(writer, sheet_name=name_a[:31], index=False)
-                if name_b in export_options and df_b is not None:
-                    df_b.to_excel(writer, sheet_name=name_b[:31], index=False)
-                if 'Duplicates' in export_options:
-                    for df, n in zip([df_a, df_b], [name_a, name_b]):
-                        if df is not None:
-                            duplicates = df[df.duplicated(keep=False)]
-                            if not duplicates.empty:
-                                duplicates.to_excel(writer, sheet_name=f'Duplicates_{n[:25]}', index=False)
-                if 'Outliers' in export_options:
-                    for df, n in zip([df_a, df_b], [name_a, name_b]):
-                        if df is not None:
-                            outliers = detect_outliers(df)
-                            if not outliers.empty:
-                                outliers.to_excel(writer, sheet_name=f'Outliers_{n[:25]}', index=False)
-            st.download_button("Download Excel Report", data=buffer.getvalue(), file_name=file_name, mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+                for ds_name, label in [('cleaned_a_saved','A'), ('cleaned_b_saved','B'), ('cleaned_a','A'), ('cleaned_b','B')]:
+                    df = st.session_state.get(ds_name)
+                    if df is None:
+                        continue
+                    if f'Cleaned Dataset {label}' in export_options:
+                        df.to_excel(writer, sheet_name=f'Cleaned_{label}', index=False)
+                    if 'Duplicates' in export_options:
+                        duplicates = df[df.duplicated(keep=False)]
+                        if not duplicates.empty:
+                            duplicates.to_excel(writer, sheet_name=f'Duplicates_{label}', index=False)
+                    if 'Outliers' in export_options:
+                        outliers = detect_outliers(df)
+                        if not outliers.empty:
+                            outliers.to_excel(writer, sheet_name=f'Outliers_{label}', index=False)
+            st.download_button("Download Excel Report", data=buffer.getvalue(),
+                               file_name=file_name,
+                               mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
             st.success(f"Exported: {', '.join(export_options)}")
+
 
 # -----------------------------
 # Tab 6: PDF Report
 # -----------------------------
 with tab6:
     st.header("Generate PDF Report")
+
     dataset_choice = st.selectbox(
         "Select Dataset for PDF Report",
-        [name_a, name_b]
+        ["Dataset A", "Dataset B"]
     )
-    df = df_a if dataset_choice == name_a else df_b
+    df = st.session_state['cleaned_a_saved'] if dataset_choice=="Dataset A" and st.session_state.get('cleaned_a_saved') is not None else (
+        st.session_state['cleaned_b_saved'] if dataset_choice=="Dataset B" and st.session_state.get('cleaned_b_saved') is not None else (
+        st.session_state['cleaned_a'] if dataset_choice=="Dataset A" else st.session_state['cleaned_b'])
+    )
 
     if df is None:
         st.warning("Please upload and clean the dataset first.")
@@ -388,31 +394,13 @@ with tab6:
                 "Descriptive Statistics",
                 "Outlier Summary",
                 "Top N Categories",
-                "Correlation Matrix"
+                "Correlation Matrix",
+                "Selected Charts"
             ],
             default=["Data Overview (rows, columns, missing, duplicates)"]
         )
 
         top_n = st.number_input("Top N categories for categorical columns", min_value=1, max_value=20, value=5)
-        include_charts = st.checkbox("Include charts in PDF", value=True)
-
-        def generate_insights(df):
-            rows, cols = df.shape
-            missing = df.isna().sum()
-            duplicates = df.duplicated().sum()
-            top_cats = {}
-            for col in df.select_dtypes(include='object').columns:
-                top = df[col].value_counts().head(3).to_dict()
-                top_cats[col] = top
-            insight_text = f"The dataset has {rows} rows and {cols} columns.\n"
-            if missing.sum() > 0:
-                insight_text += "Columns with most missing values — " + \
-                    "; ".join([f"{k}: {v} missing" for k, v in missing.items() if v > 0]) + ".\n"
-            if duplicates > 0:
-                insight_text += f"There are {duplicates} internal duplicate rows.\n"
-            for col, top in top_cats.items():
-                insight_text += f"Top categories in {col} → " + ", ".join([f"{k} ({v})" for k, v in top.items()]) + ".\n"
-            return insight_text
 
         if st.button("Generate PDF"):
             pdf = FPDF()
@@ -426,7 +414,7 @@ with tab6:
                 pdf.set_font("Arial", 'B', 12)
                 pdf.cell(0, 10, "Data Overview", ln=True)
                 pdf.set_font("Arial", '', 10)
-                pdf.multi_cell(0, 5, f"Rows: {df.shape[0]}\nColumns: {df.shape[1]}")
+                pdf.multi_cell(0, 5, f"Number of rows: {df.shape[0]}\nNumber of columns: {df.shape[1]}")
                 missing = df.isna().sum()
                 pdf.multi_cell(0, 5, f"Missing values per column:\n{missing.to_string()}")
                 duplicates = df.duplicated().sum()
@@ -447,37 +435,50 @@ with tab6:
                 pdf.set_font("Arial", 'B', 12)
                 pdf.cell(0, 10, "Outlier Summary", ln=True)
                 outliers = detect_outliers(df)
-                pdf.set_font("Arial", '', 8)
-                pdf.multi_cell(0, 5, f"Outliers detected: {len(outliers)}")
+                pdf.set_font("Arial", '', 10)
+                if not outliers.empty:
+                    pdf.multi_cell(0, 5, f"Found {len(outliers)} outlier rows.")
+                else:
+                    pdf.multi_cell(0, 5, "No outliers detected.")
                 pdf.ln(5)
 
             # Top N Categories
             if "Top N Categories" in pdf_sections:
                 pdf.set_font("Arial", 'B', 12)
-                pdf.cell(0, 10, f"Top {top_n} Categories", ln=True)
-                pdf.set_font("Arial", '', 8)
-                for col in df.select_dtypes(include='object').columns:
-                    top = df[col].value_counts().head(top_n)
-                    pdf.multi_cell(0, 5, f"{col}:\n{top.to_string()}\n")
+                pdf.cell(0, 10, f"Top {top_n} Categories per Column", ln=True)
+                pdf.set_font("Arial", '', 10)
+                cat_cols = df.select_dtypes(include=['object']).columns
+                for col in cat_cols:
+                    top_vals = df[col].value_counts().head(top_n)
+                    pdf.multi_cell(0, 5, f"{col}:\n{top_vals.to_string()}\n")
                 pdf.ln(5)
 
             # Correlation Matrix
             if "Correlation Matrix" in pdf_sections:
                 numeric_cols = df.select_dtypes(include=['number']).columns
-                if len(numeric_cols) > 1:
+                if len(numeric_cols) > 0:
                     corr = df[numeric_cols].corr()
-                    pdf.set_font("Arial", 'B', 12)
-                    pdf.cell(0, 10, "Correlation Matrix", ln=True)
-                    pdf.set_font("Arial", '', 8)
-                    pdf.multi_cell(0, 5, corr.to_string())
-                    pdf.ln(5)
+                    fig = px.imshow(corr, text_auto=True)
+                    chart_file = f"corr_matrix_{dataset_choice}.png"
+                    fig.write_image(chart_file)
+                    pdf.image(chart_file, w=180)
+                    os.remove(chart_file)
+                pdf.ln(5)
 
-            # Automatic Insights
+            # Insights
             pdf.set_font("Arial", 'B', 12)
             pdf.cell(0, 10, "Insights", ln=True)
             pdf.set_font("Arial", '', 10)
-            insights_text = generate_insights(df)
+            insights_text = f"The dataset has {df.shape[0]} rows and {df.shape[1]} columns. "
+            if df.select_dtypes(include=['object']).shape[1] > 0:
+                top_missing = df.isna().sum().sort_values(ascending=False).head(5)
+                insights_text += "Columns with most missing values — " + "; ".join([f"{c}: {v}" for c,v in top_missing.items()]) + ". "
+            duplicates = df.duplicated().sum()
+            insights_text += f"There are {duplicates} internal duplicate rows. "
             pdf.multi_cell(0, 5, insights_text)
 
-            pdf_output = pdf.output(dest='S').encode('latin-1', 'replace')
-            st.download_button("Download PDF", data=pdf_output, file_name=f"{dataset_choice}_DataLens.pdf", mime="application/pdf")
+            try:
+                out_bytes = pdf.output(dest='S').encode('latin-1')
+                st.download_button("Download PDF Report", data=out_bytes, file_name=f"{dataset_choice}_DataLens_Report.pdf")
+            except Exception as e:
+                st.error(f"Error generating PDF: {e}")
