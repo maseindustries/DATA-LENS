@@ -75,10 +75,10 @@ with tab2:
     if st.session_state.cleaned_a is None and st.session_state.cleaned_b is None:
         st.warning("Please upload datasets in Tab 1 before cleaning.")
     else:
-        # Preview datasets
+        # Preview datasets if available
         for ds_name, label in [("cleaned_a", "Dataset A"), ("cleaned_b", "Dataset B")]:
             df = st.session_state.get(ds_name)
-            if df is not None:
+            if df is not None and isinstance(df, pd.DataFrame):
                 st.subheader(f"{label} Preview")
                 st.dataframe(df.head())
 
@@ -111,7 +111,10 @@ with tab2:
                 ("cleaned_b", "Dataset B", custom_name_b)
             ]:
                 df = st.session_state.get(ds_name)
-                if df is None:
+                
+                # Safety check
+                if df is None or not isinstance(df, pd.DataFrame):
+                    st.warning(f"{label} is not loaded correctly. Skipping.")
                     continue
 
                 original_shape = df.shape
@@ -153,7 +156,7 @@ with tab2:
                         df.drop(columns=all_null_cols, inplace=True)
                         applied_ops.append(f"Removed {len(all_null_cols)} columns with all nulls")
 
-                # Save cleaned dataset
+                # Save cleaned dataset and update session state
                 st.session_state[ds_name] = df
                 st.session_state[f"{ds_name}_name"] = custom_name
                 st.session_state[f"{ds_name}_operations"] = applied_ops
