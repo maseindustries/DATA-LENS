@@ -71,19 +71,23 @@ with tab1:
 with tab2:
     st.header("Data Cleaning")
 
+    datasets = [
+        ("cleaned_a", "Dataset A", st.session_state.get('cleaned_a_name', 'Dataset A')),
+        ("cleaned_b", "Dataset B", st.session_state.get('cleaned_b_name', 'Dataset B'))
+    ]
+
     # Check if at least one dataset exists
-    if (st.session_state.cleaned_a is None or not isinstance(st.session_state.cleaned_a, pd.DataFrame)) \
-       and (st.session_state.cleaned_b is None or not isinstance(st.session_state.cleaned_b, pd.DataFrame)):
+    if all(st.session_state.get(ds_name) is None for ds_name, _, _ in datasets):
         st.warning("Please upload at least one dataset in Tab 1 before cleaning.")
     else:
         # Preview available datasets
-        for ds_name, label in [("cleaned_a", "Dataset A"), ("cleaned_b", "Dataset B")]:
+        for ds_name, label, _ in datasets:
             df = st.session_state.get(ds_name)
-            if df is not None and isinstance(df, pd.DataFrame):
+            if isinstance(df, pd.DataFrame):
                 st.subheader(f"{label} Preview")
                 st.dataframe(df.head())
             else:
-                st.info(f"{label} is not uploaded or is invalid. Skipping preview.")
+                st.info(f"{label} is not uploaded or invalid. Skipping preview.")
 
         # Cleaning options
         cleaning_options = st.multiselect(
@@ -99,43 +103,32 @@ with tab2:
         )
 
         # Custom names
-        custom_name_a = st.text_input(
-            "Name Dataset A (optional)",
-            value=st.session_state.get('cleaned_a_name', 'Dataset A')
-        )
-        custom_name_b = st.text_input(
-            "Name Dataset B (optional)",
-            value=st.session_state.get('cleaned_b_name', 'Dataset B')
-        )
+        custom_names = {
+            "cleaned_a": st.text_input("Name Dataset A (optional)", value=st.session_state.get('cleaned_a_name', 'Dataset A')),
+            "cleaned_b": st.text_input("Name Dataset B (optional)", value=st.session_state.get('cleaned_b_name', 'Dataset B'))
+        }
 
         if st.button("Run Cleaning"):
-            for ds_name, label, custom_name in [
-                ("cleaned_a", "Dataset A", custom_name_a),
-                ("cleaned_b", "Dataset B", custom_name_b)
-            ]:
+            for ds_name, label, _ in datasets:
                 df = st.session_state.get(ds_name)
 
-                # Skip if dataset is missing or invalid
-                if df is None:
-                    st.info(f"{label} is not uploaded. Skipping.")
-                    continue
-                if not isinstance(df, pd.DataFrame):
-                    st.warning(f"{label} is not a valid DataFrame (found {type(df)}). Skipping.")
+                # HARD SAFETY CHECK: skip if missing or invalid
+                if df is None or not isinstance(df, pd.DataFrame):
+                    st.info(f"{label} is not available for cleaning. Skipping.")
                     continue
 
-                original_shape = df.shape
+                # Now safe to perform operations
+                numeric_cols = df.select_dtypes(include=['number']).columns
+                cat_cols = df.select_dtypes(include=['object']).columns
+
                 applied_ops = []
+                original_shape = df.shape
 
-                # Safe column detection
-                numeric_cols = df.select_dtypes(include=['number']).columns if not df.empty else []
-                cat_cols = df.select_dtypes(include=['object']).columns if not df.empty else []
-
-                # Apply selected cleaning operations
+                # Apply cleaning operations
                 if "Drop duplicate rows" in cleaning_options:
                     before = len(df)
                     df = df.drop_duplicates()
-                    after = len(df)
-                    if after < before:
+                    if len(df) < before:
                         applied_ops.append("Duplicate rows removed")
 
                 if "Fill missing numeric values with median" in cleaning_options:
@@ -163,13 +156,13 @@ with tab2:
                         df.drop(columns=all_null_cols, inplace=True)
                         applied_ops.append(f"Removed {len(all_null_cols)} columns with all nulls")
 
-                # Save cleaned dataset and update session state
+                # Save results back to session state
                 st.session_state[ds_name] = df
-                st.session_state[f"{ds_name}_name"] = custom_name
+                st.session_state[f"{ds_name}_name"] = custom_names[ds_name]
                 st.session_state[f"{ds_name}_operations"] = applied_ops
                 st.session_state[f"{ds_name}_saved"] = True
 
-                # Display cleaning summary
+                # Display summary
                 new_shape = df.shape
                 st.subheader(f"{label} Cleaning Summary")
                 if applied_ops:
@@ -177,15 +170,9 @@ with tab2:
                     for op in applied_ops:
                         st.markdown(f"- {op}")
                 else:
-                    st.info("No changes were necessary based on selected options.")
+                    st.info("No changes were necessary.")
                 st.write(f"**Original shape:** {original_shape}, **New shape:** {new_shape}")
                 st.dataframe(df.head())
-
-        # Optional debug info to verify session state
-        st.write("DEBUG: Session state types after cleaning")
-        st.write(f"cleaned_a type = {type(st.session_state.get('cleaned_a'))}")
-        st.write(f"cleaned_b type = {type(st.session_state.get('cleaned_b'))}")
-# -----------------------------
 # Tab 3: EDA
 # -----------------------------
 with tab3:
