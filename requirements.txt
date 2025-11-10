@@ -8,4 +8,4 @@ shap
 openpyxl
 tqdm
 setuptools
-XlsxWriter
+xlsxwriter
