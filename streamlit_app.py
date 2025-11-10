@@ -515,158 +515,142 @@ with tab5:
                 name = f"chart_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png"
                 st.download_button("Download chart PNG", data=png, file_name=name, mime="image/png")
 
-# ----------------------------
-# Tab 6: PDF Report with charts & insights
-# ----------------------------
+# -----------------------------
+# Tab 6: PDF Report
+# -----------------------------
 with tab6:
-    st.header("PDF Report — customizable with charts and auto-insights")
-    ds_select = st.selectbox("Choose dataset for PDF", options=[
-        file_title(st.session_state.file_a_name) if st.session_state.cleaned_a is not None else None,
-        file_title(st.session_state.file_b_name) if st.session_state.cleaned_b is not None else None
-    ], format_func=lambda x: x if x else "No dataset", key="pdf_ds")
+    st.header("Generate PDF Report")
 
-    df_map = {}
-    if st.session_state.cleaned_a is not None:
-        df_map[file_title(st.session_state.file_a_name)] = st.session_state.cleaned_a
-    if st.session_state.cleaned_b is not None:
-        df_map[file_title(st.session_state.file_b_name)] = st.session_state.cleaned_b
-
-    df_sel = df_map.get(ds_select)
-    if df_sel is None:
-        st.warning("Please upload and clean a dataset to generate PDF.")
+    dataset_choice = st.selectbox(
+        "Select Dataset for PDF Report",
+        ["Dataset A", "Dataset B"]
+    )
+    df = st.session_state.cleaned_a if dataset_choice == "Dataset A" else st.session_state.cleaned_b
+    file_name = st.session_state.get('uploaded_file_a').name if dataset_choice == "Dataset A" else st.session_state.get('uploaded_file_b').name
+    if df is None:
+        st.warning("Please upload and clean the dataset first.")
     else:
-        sections = st.multiselect(
+        pdf_sections = st.multiselect(
             "Select sections to include in PDF",
-            ["Data Overview", "Descriptive Statistics", "Top N Categories", "Outlier Summary", "Charts", "Correlation Matrix"],
-            default=["Data Overview", "Top N Categories"]
+            [
+                "Data Overview (rows, columns, missing, duplicates)",
+                "Descriptive Statistics",
+                "Outlier Summary",
+                "Top N Categories",
+                "Correlation Matrix",
+                "Charts",
+                "Insights Paragraph"
+            ],
+            default=["Data Overview (rows, columns, missing, duplicates)"]
         )
-        topn = st.number_input("Top N categories", min_value=1, max_value=20, value=5)
-        chart_choices = st.multiselect("Choose charts to include", ["Histogram", "Boxplot", "Scatter"], default=["Histogram"])
+
+        top_n = st.number_input("Top N categories for categorical columns", min_value=1, max_value=20, value=5)
+
+        # Get last plotly figure if exists
+        last_fig = st.session_state.get("last_plotly_figure")
 
         if st.button("Generate PDF"):
             pdf = FPDF()
-            pdf.set_auto_page_break(auto=True, margin=12)
             pdf.add_page()
-            pdf.set_font("Arial", "B", 16)
-            title = ds_select if ds_select else "Dataset"
-            pdf.cell(0, 10, f"{title} — DataLens Report", ln=True, align="C")
-            pdf.ln(4)
+            pdf.set_font("Arial", 'B', 16)
+            pdf.cell(0, 10, f"{file_name} - DataLens Report", ln=True, align="C")
+            pdf.ln(10)
 
-            insights = generate_insights_paragraph(df_sel, top_n=3)
-            pdf.set_font("Arial", "", 10)
-            pdf.multi_cell(0, 6, "Insights:")
-            pdf.set_font("Arial", "", 9)
-            pdf.multi_cell(0, 5, insights)
-            pdf.ln(3)
+            # Data Overview
+            if "Data Overview (rows, columns, missing, duplicates)" in pdf_sections:
+                pdf.set_font("Arial", 'B', 12)
+                pdf.cell(0, 10, "Data Overview", ln=True)
+                pdf.set_font("Arial", '', 10)
+                pdf.multi_cell(0, 5, f"Number of rows: {df.shape[0]}\nNumber of columns: {df.shape[1]}")
+                missing = df.isna().sum()
+                pdf.multi_cell(0, 5, f"Missing values per column:\n{missing.to_string()}")
+                duplicates = df.duplicated().sum()
+                pdf.cell(0, 5, f"Duplicate rows: {duplicates}", ln=True)
+                pdf.ln(5)
 
-            if "Data Overview" in sections:
-                pdf.set_font("Arial", "B", 12)
-                pdf.cell(0, 7, "Data Overview", ln=True)
-                pdf.set_font("Arial", "", 9)
-                pdf.multi_cell(0, 5, f"Rows: {df_sel.shape[0]}, Columns: {df_sel.shape[1]}")
-                mv = df_sel.isna().sum()
-                mv_str = mv[mv > 0].to_string() if mv.sum() > 0 else "None"
-                pdf.multi_cell(0, 5, f"Missing values (non-zero):\n{mv_str}")
-                pdf.ln(3)
-
-            if "Descriptive Statistics" in sections:
-                pdf.set_font("Arial", "B", 12)
-                pdf.cell(0, 7, "Descriptive Statistics", ln=True)
-                pdf.set_font("Courier", "", 8)
-                stats = df_sel.describe(include='all').transpose().head(60)
+            # Descriptive Statistics
+            if "Descriptive Statistics" in pdf_sections:
+                pdf.set_font("Arial", 'B', 12)
+                pdf.cell(0, 10, "Descriptive Statistics", ln=True)
+                stats = df.describe(include='all').transpose().head(20)
+                pdf.set_font("Arial", '', 8)
                 pdf.multi_cell(0, 5, stats.to_string())
-                pdf.ln(3)
+                pdf.ln(5)
 
-            if "Top N Categories" in sections:
-                pdf.set_font("Arial", "B", 12)
-                pdf.cell(0, 7, f"Top {topn} Categories", ln=True)
-                pdf.set_font("Arial", "", 9)
-                cat_cols = safe_cols(df_sel, dtype='categorical')
-                if not cat_cols:
-                    pdf.cell(0, 5, "No categorical columns found.", ln=True)
-                else:
-                    for c in cat_cols:
-                        top = df_sel[c].value_counts().head(topn)
-                        pdf.multi_cell(0, 5, f"{c}:\n{top.to_string()}")
-                        pdf.ln(1)
+            # Outlier Summary
+            if "Outlier Summary" in pdf_sections:
+                pdf.set_font("Arial", 'B', 12)
+                pdf.cell(0, 10, "Outlier Summary", ln=True)
+                numeric_cols = df.select_dtypes(include=['number']).columns
+                outlier_info = ""
+                for col in numeric_cols:
+                    Q1 = df[col].quantile(0.25)
+                    Q3 = df[col].quantile(0.75)
+                    IQR = Q3 - Q1
+                    outliers = df[(df[col] < Q1 - 1.5*IQR) | (df[col] > Q3 + 1.5*IQR)]
+                    outlier_info += f"{col}: {len(outliers)} outliers\n"
+                pdf.set_font("Arial", '', 10)
+                pdf.multi_cell(0, 5, outlier_info)
+                pdf.ln(5)
 
-            if "Outlier Summary" in sections:
-                pdf.set_font("Arial", "B", 12)
-                pdf.cell(0, 7, "Outlier Summary", ln=True)
-                pdf.set_font("Arial", "", 9)
-                out = detect_outliers_iqr(df_sel)
-                if out.empty:
-                    pdf.cell(0, 5, "No outliers detected (IQR method).", ln=True)
-                else:
-                    pdf.multi_cell(0, 5, f"Found {len(out)} outlier rows. Showing first 10 rows:\n{out.head(10).to_string(index=False)}")
-                pdf.ln(2)
+            # Top N Categories
+            if "Top N Categories" in pdf_sections:
+                pdf.set_font("Arial", 'B', 12)
+                pdf.cell(0, 10, f"Top {top_n} Categories per Column", ln=True)
+                cat_cols = df.select_dtypes(include=['object']).columns
+                pdf.set_font("Arial", '', 10)
+                for col in cat_cols:
+                    top_vals = df[col].value_counts().head(top_n)
+                    pdf.multi_cell(0, 5, f"{col}:\n{top_vals.to_string()}\n")
+                pdf.ln(5)
 
-            temp_files = []
-            if "Charts" in sections:
-                pdf.set_font("Arial", "B", 12)
-                pdf.cell(0, 7, "Charts", ln=True)
-                numeric_cols = safe_cols(df_sel, dtype='numeric')
-                chart_cols = numeric_cols[:6]
-                for chart in chart_choices:
-                    pdf.set_font("Arial", "B", 11)
-                    pdf.cell(0, 6, chart, ln=True)
-                    for col in chart_cols:
-                        try:
-                            if chart == "Histogram":
-                                fig = px.histogram(df_sel, x=col, nbins=40, title=f"{col} distribution")
-                            elif chart == "Boxplot":
-                                fig = px.box(df_sel, y=col, title=f"{col} boxplot")
-                            elif chart == "Scatter":
-                                other = [c for c in numeric_cols if c != col]
-                                if not other:
-                                    continue
-                                fig = px.scatter(df_sel, x=col, y=other[0], title=f"{other[0]} vs {col}")
-                            else:
-                                continue
-                            png = fig_to_png_bytes(fig)
-                            if png is None:
-                                pdf.set_font("Arial", "", 9)
-                                pdf.cell(0, 6, "PNG generation not available (install kaleido). Skipping chart embedding.", ln=True)
-                                continue
-                            tf = tempfile.NamedTemporaryFile(delete=False, suffix=".png")
-                            tf.write(png)
-                            tf.flush()
-                            tf.close()
-                            temp_files.append(tf.name)
-                            pdf.image(tf.name, w=pdf.epw)
-                            pdf.ln(3)
-                        except Exception as e:
-                            pdf.set_font("Arial", "", 8)
-                            pdf.multi_cell(0, 5, f"Failed to render chart for {col}: {e}")
-                            continue
+            # Correlation Matrix
+            if "Correlation Matrix" in pdf_sections and len(numeric_cols) > 0:
+                pdf.set_font("Arial", 'B', 12)
+                pdf.cell(0, 10, "Correlation Matrix", ln=True)
+                corr = df[numeric_cols].corr()
+                pdf.set_font("Arial", '', 8)
+                pdf.multi_cell(0, 5, corr.to_string())
+                pdf.ln(5)
 
-            if "Correlation Matrix" in sections:
-                numeric_cols = safe_cols(df_sel, dtype='numeric')
-                if len(numeric_cols) < 2:
-                    pdf.set_font("Arial", "", 9)
-                    pdf.cell(0, 6, "Not enough numeric columns for correlation matrix.", ln=True)
-                else:
-                    corr = df_sel[numeric_cols].corr()
-                    fig = px.imshow(corr, text_auto=True, title="Correlation matrix")
-                    png = fig_to_png_bytes(fig)
-                    if png is not None:
-                        tf = tempfile.NamedTemporaryFile(delete=False, suffix=".png")
-                        tf.write(png)
-                        tf.flush()
-                        tf.close()
-                        temp_files.append(tf.name)
-                        pdf.image(tf.name, w=pdf.epw)
-                        pdf.ln(3)
-                    else:
-                        pdf.cell(0, 6, "PNG export for correlation matrix unavailable (install kaleido).", ln=True)
+            # Charts
+            if "Charts" in pdf_sections and last_fig is not None:
+                pdf.set_font("Arial", 'B', 12)
+                pdf.cell(0, 10, "Charts", ln=True)
+                # Save the figure temporarily as PNG
+                chart_file = "temp_chart.png"
+                last_fig.write_image(chart_file)
+                pdf.image(chart_file, x=10, w=180)
+                os.remove(chart_file)
+                pdf.ln(5)
 
-            out_bytes = pdf.output(dest='S').encode('latin-1')
-            for fp in temp_files:
-                try:
-                    os.remove(fp)
-                except Exception:
-                    pass
+            # Insights Paragraph
+            if "Insights Paragraph" in pdf_sections:
+                pdf.set_font("Arial", 'B', 12)
+                pdf.cell(0, 10, "Insights", ln=True)
+                pdf.set_font("Arial", '', 10)
+                insights = []
+                if duplicates > 0:
+                    insights.append(f"There are {duplicates} duplicate rows in the dataset.")
+                if missing.sum() > 0:
+                    insights.append(f"Some columns have missing values; consider cleaning before analysis.")
+                if len(numeric_cols) > 0:
+                    high_corr = corr.abs().unstack().sort_values(ascending=False)
+                    high_corr = high_corr[high_corr < 1].drop_duplicates()
+                    if not high_corr.empty:
+                        insights.append(f"There are numeric columns with strong correlations (>|0.8|) worth investigating.")
+                if not insights:
+                    insights.append("The dataset appears clean and ready for analysis.")
+                pdf.multi_cell(0, 5, "\n".join(insights))
+                pdf.ln(5)
 
-            out_name = f"DataLens_{ds_select.replace(' ', '_')}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf"
-            st.download_button("Download PDF Report", data=out_bytes, file_name=out_name, mime="application/pdf")
-            st.success("PDF generated.")
+            # Output PDF as UTF-8 bytes
+            out_bytes = pdf.output(dest='S').encode('utf-8')
+            pdf_file_name = f"{file_name}_DataLens_Report.pdf"
+            st.download_button(
+                "Download PDF Report",
+                data=out_bytes,
+                file_name=pdf_file_name,
+                mime="application/pdf"
+            )
+            st.success("PDF report generated successfully!")
