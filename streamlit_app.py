@@ -205,3 +205,59 @@ with tab2:
         st.write("DEBUG: Session state types after cleaning")
         st.write(f"cleaned_a type = {type(st.session_state.get('cleaned_a'))}")
         st.write(f"cleaned_b type = {type(st.session_state.get('cleaned_b'))}")
+ # -----------------------------
+# Tab 3: EDA
+# -----------------------------
+with tab3:
+    st.header("Exploratory Data Analysis (EDA)")
+
+    # Define datasets
+    datasets = [
+        ("cleaned_a", "Dataset A"),
+        ("cleaned_b", "Dataset B")
+    ]
+
+    # Check if any cleaned dataset exists
+    if not any(st.session_state.get(f"{ds_name}_saved") for ds_name, _ in datasets):
+        st.warning("Please clean at least one dataset in Tab 2 before running EDA.")
+    else:
+        for ds_name, label in datasets:
+            df = st.session_state.get(ds_name)
+            if df is not None and isinstance(df, pd.DataFrame):
+                st.subheader(f"{label} Overview")
+                
+                # Shape
+                st.write(f"Shape: {df.shape[0]} rows × {df.shape[1]} columns")
+                
+                # Columns
+                st.write("Columns:", list(df.columns))
+                
+                # Missing values
+                missing = df.isna().sum()
+                if missing.sum() > 0:
+                    st.write("Missing values per column:")
+                    st.dataframe(missing[missing > 0])
+                else:
+                    st.info("No missing values detected.")
+                
+                # Numeric summary
+                numeric_cols = df.select_dtypes(include=['number']).columns
+                if len(numeric_cols) > 0:
+                    st.write("Numeric columns summary:")
+                    st.dataframe(df[numeric_cols].describe())
+                    
+                    # Optional plot
+                    for col in numeric_cols:
+                        st.write(f"Histogram for {col}")
+                        fig = px.histogram(df, x=col)
+                        st.plotly_chart(fig, use_container_width=True)
+                
+                # Categorical summary
+                cat_cols = df.select_dtypes(include=['object']).columns
+                if len(cat_cols) > 0:
+                    st.write("Categorical columns summary:")
+                    for col in cat_cols:
+                        st.write(f"Value counts for {col}")
+                        st.dataframe(df[col].value_counts())
+            else:
+                st.info(f"{label} is not available for EDA.")
