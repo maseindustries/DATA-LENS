@@ -144,19 +144,20 @@ with tab2:
         st.session_state['cleaned_a_saved'] = None
         st.session_state['cleaned_b_saved'] = None
         st.success("Saved changes reset. Using original cleaned preview data.")
-
 # -----------------------------
 # Tab 3: EDA
 # -----------------------------
 with tab3:
     st.header("Exploratory Data Analysis")
+
+    # Prepare display names safely
+    name_a_display = st.session_state.get('cleaned_a_name') or "Dataset A"
+    name_b_display = st.session_state.get('cleaned_b_name') or "Dataset B"
+
     datasets_choice = st.multiselect(
         "Select dataset(s) for EDA",
-        [
-            st.session_state.get('cleaned_a_name') or "Dataset A",
-            st.session_state.get('cleaned_b_name') or "Dataset B"
-        ],
-        default=[st.session_state.get('cleaned_a_name') or "Dataset A"]
+        [name_a_display, name_b_display],
+        default=[name_a_display]
     )
 
     chart_type = st.selectbox(
@@ -165,12 +166,16 @@ with tab3:
     )
 
     for ds in datasets_choice:
-        df = None
-        if ds == (st.session_state.get('cleaned_a_name') or "Dataset A"):
-            df = st.session_state.get('cleaned_a_saved') or st.session_state.get('cleaned_a')
-        elif ds == (st.session_state.get('cleaned_b_name') or "Dataset B"):
-            df = st.session_state.get('cleaned_b_saved') or st.session_state.get('cleaned_b')
+        # Safely get the correct DataFrame
+        if ds == name_a_display:
+            df = st.session_state['cleaned_a_saved'] if st.session_state.get('cleaned_a_saved') is not None else st.session_state.get('cleaned_a')
+        elif ds == name_b_display:
+            df = st.session_state['cleaned_b_saved'] if st.session_state.get('cleaned_b_saved') is not None else st.session_state.get('cleaned_b')
+        else:
+            df = None
+
         if df is None:
+            st.warning(f"{ds} is not available for EDA.")
             continue
 
         st.subheader(f"{ds} - {chart_type if chart_type != 'All' else 'Comprehensive EDA'}")
