@@ -356,7 +356,7 @@ import matplotlib.pyplot as plt
 from fpdf import FPDF
 import base64
 
-with st.tab("PDF Report"):
+with st.tabs("PDF Report"):
     st.header("Generate PDF Report")
 
     dataset_choice = st.selectbox(
