@@ -574,7 +574,7 @@ with tab6:
             pdf.cell(0, 10, f"{file_name} - DataLens Report", ln=True, align="C")
             pdf.ln(10)
 
-            # Data Overview
+            # ---------------- Data Overview ----------------
             if "Data Overview (rows, columns, missing, duplicates)" in pdf_sections:
                 pdf.set_font("Arial", 'B', 12)
                 pdf.cell(0, 10, "Data Overview", ln=True)
@@ -586,7 +586,7 @@ with tab6:
                 pdf.cell(0, 5, f"Duplicate rows: {duplicates}", ln=True)
                 pdf.ln(5)
 
-            # Descriptive Statistics
+            # ---------------- Descriptive Statistics ----------------
             if "Descriptive Statistics" in pdf_sections:
                 pdf.set_font("Arial", 'B', 12)
                 pdf.cell(0, 10, "Descriptive Statistics", ln=True)
@@ -595,7 +595,7 @@ with tab6:
                 pdf.multi_cell(0, 5, stats.to_string())
                 pdf.ln(5)
 
-            # Outlier Summary
+            # ---------------- Outlier Summary ----------------
             if "Outlier Summary" in pdf_sections:
                 pdf.set_font("Arial", 'B', 12)
                 pdf.cell(0, 10, "Outlier Summary", ln=True)
@@ -611,7 +611,7 @@ with tab6:
                 pdf.multi_cell(0, 5, outlier_info)
                 pdf.ln(5)
 
-            # Top N Categories
+            # ---------------- Top N Categories ----------------
             if "Top N Categories" in pdf_sections:
                 pdf.set_font("Arial", 'B', 12)
                 pdf.cell(0, 10, f"Top {top_n} Categories per Column", ln=True)
@@ -622,7 +622,7 @@ with tab6:
                     pdf.multi_cell(0, 5, f"{col}:\n{top_vals.to_string()}\n")
                 pdf.ln(5)
 
-            # Correlation Matrix
+            # ---------------- Correlation Matrix ----------------
             if "Correlation Matrix" in pdf_sections and len(numeric_cols) > 0:
                 pdf.set_font("Arial", 'B', 12)
                 pdf.cell(0, 10, "Correlation Matrix", ln=True)
@@ -631,17 +631,21 @@ with tab6:
                 pdf.multi_cell(0, 5, corr.to_string())
                 pdf.ln(5)
 
-            # Charts
+            # ---------------- Charts ----------------
             if "Charts" in pdf_sections and last_fig is not None:
                 pdf.set_font("Arial", 'B', 12)
                 pdf.cell(0, 10, "Charts", ln=True)
-                chart_file = "temp_chart.png"
-                last_fig.write_image(chart_file)
-                pdf.image(chart_file, x=10, w=180)
-                os.remove(chart_file)
+                try:
+                    chart_file = "temp_chart.png"
+                    last_fig.write_image(chart_file, engine="kaleido")
+                    pdf.image(chart_file, x=10, w=180)
+                    os.remove(chart_file)
+                except Exception as e:
+                    pdf.set_font("Arial", '', 10)
+                    pdf.multi_cell(0, 5, f"Could not include chart: {e}")
                 pdf.ln(5)
 
-            # Insights Paragraph
+            # ---------------- Insights Paragraph ----------------
             if "Insights Paragraph" in pdf_sections:
                 pdf.set_font("Arial", 'B', 12)
                 pdf.cell(0, 10, "Insights", ln=True)
@@ -661,7 +665,7 @@ with tab6:
                 pdf.multi_cell(0, 5, "\n".join(insights))
                 pdf.ln(5)
 
-            # Output PDF as UTF-8 bytes
+            # ---------------- Output PDF ----------------
             out_bytes = pdf.output(dest='S').encode('utf-8')
             pdf_file_name = f"{file_name}_DataLens_Report.pdf"
             st.download_button(
@@ -671,4 +675,3 @@ with tab6:
                 mime="application/pdf"
             )
             st.success("PDF report generated successfully!")
-
