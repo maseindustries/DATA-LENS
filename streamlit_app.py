@@ -353,87 +353,125 @@ with tab5:
 # -----------------------------
 # Tab 6: PDF Report
 # -----------------------------
-with tab6:
+with st.tab("PDF Report"):
     st.header("Generate PDF Report")
-    
+
+    # Choose dataset
     dataset_choice = st.selectbox(
-        "Select dataset for PDF report",
-        ["Dataset A", "Dataset B"],
-        key="pdf_dataset"
+        "Select Dataset for PDF Report",
+        ["Dataset A", "Dataset B"]
     )
+    df = st.session_state.cleaned_a if dataset_choice == "Dataset A" else st.session_state.cleaned_b
 
-    include_overview = st.checkbox("Include Data Overview (rows, columns, missing, duplicates)", True)
-    include_stats = st.checkbox("Include Descriptive Statistics", True)
-    include_outliers = st.checkbox("Include Outlier Summary", True)
+    if df is None:
+        st.warning("Please upload and clean the dataset first.")
+    else:
+        # Select which sections to include
+        pdf_sections = st.multiselect(
+            "Select sections to include in PDF",
+            [
+                "Data Overview (rows, columns, missing, duplicates)",
+                "Descriptive Statistics",
+                "Outlier Summary",
+                "Top N Categories",
+                "Correlation Matrix"
+            ],
+            default=["Data Overview (rows, columns, missing, duplicates)"]
+        )
 
-    if st.button("Generate PDF", key="generate_pdf"):
-        from fpdf import FPDF
-        import io
+        top_n = st.number_input("Top N categories for categorical columns", min_value=1, max_value=20, value=5)
 
-        # Select dataset
-        if dataset_choice == "Dataset A":
-            df = st.session_state.cleaned_a
-        else:
-            df = st.session_state.cleaned_b
+        if st.button("Generate PDF"):
+            from fpdf import FPDF
+            import pandas as pd
+            import matplotlib.pyplot as plt
 
-        if df is None:
-            st.warning(f"{dataset_choice} is not available. Please upload and clean it first.")
-        else:
             pdf = FPDF()
             pdf.add_page()
             pdf.set_font("Arial", 'B', 16)
             pdf.cell(0, 10, f"{dataset_choice} - DataLens Report", ln=True, align="C")
+            pdf.ln(10)
 
-            # -----------------
-            # Data Overview
-            # -----------------
-            if include_overview:
+            # --- Data Overview ---
+            if "Data Overview (rows, columns, missing, duplicates)" in pdf_sections:
                 pdf.set_font("Arial", 'B', 12)
-                pdf.ln(5)
                 pdf.cell(0, 10, "Data Overview", ln=True)
-                pdf.set_font("Arial", '', 11)
-                pdf.multi_cell(0, 8, f"Rows: {df.shape[0]}\nColumns: {df.shape[1]}")
+                pdf.set_font("Arial", '', 10)
+                pdf.multi_cell(0, 5, f"Number of rows: {df.shape[0]}\nNumber of columns: {df.shape[1]}")
                 missing = df.isna().sum()
-                dup_rows = df.duplicated().sum()
-                pdf.multi_cell(0, 8, f"Missing values per column:\n{missing.to_dict()}\nDuplicate rows: {dup_rows}")
-
-            # -----------------
-            # Descriptive stats
-            # -----------------
-            if include_stats:
-                pdf.set_font("Arial", 'B', 12)
+                pdf.multi_cell(0, 5, f"Missing values per column:\n{missing.to_string()}")
+                duplicates = df.duplicated().sum()
+                pdf.cell(0, 5, f"Duplicate rows: {duplicates}", ln=True)
                 pdf.ln(5)
+
+            # --- Descriptive Statistics ---
+            if "Descriptive Statistics" in pdf_sections:
+                pdf.set_font("Arial", 'B', 12)
                 pdf.cell(0, 10, "Descriptive Statistics", ln=True)
-                pdf.set_font("Arial", '', 11)
-                stats = df.describe(include='all').transpose().round(3).to_dict()
-                for col, vals in stats.items():
-                    pdf.multi_cell(0, 7, f"{col}: {vals}")
-
-            # -----------------
-            # Outliers
-            # -----------------
-            if include_outliers:
-                numeric_cols = df.select_dtypes(include=['number']).columns
-                pdf.set_font("Arial", 'B', 12)
+                stats = df.describe(include='all').transpose().head(20)  # limit rows
+                pdf.set_font("Arial", '', 8)
+                pdf.multi_cell(0, 5, stats.to_string())
                 pdf.ln(5)
+
+            # --- Outlier Summary ---
+            if "Outlier Summary" in pdf_sections:
+                pdf.set_font("Arial", 'B', 12)
                 pdf.cell(0, 10, "Outlier Summary", ln=True)
-                pdf.set_font("Arial", '', 11)
+                numeric_cols = df.select_dtypes(include=['number']).columns
+                outlier_text = ""
                 for col in numeric_cols:
                     Q1 = df[col].quantile(0.25)
                     Q3 = df[col].quantile(0.75)
                     IQR = Q3 - Q1
                     outliers = df[(df[col] < Q1 - 1.5 * IQR) | (df[col] > Q3 + 1.5 * IQR)]
-                    pdf.multi_cell(0, 7, f"{col}: {len(outliers)} outliers")
+                    outlier_text += f"{col}: {len(outliers)} outliers\n"
+                pdf.set_font("Arial", '', 10)
+                pdf.multi_cell(0, 5, outlier_text)
+                pdf.ln(5)
 
-            # -----------------
-            # Output PDF
-            # -----------------
-            buffer = io.BytesIO()
-            pdf.output(buffer)
+            # --- Top N Categories ---
+            if "Top N Categories" in pdf_sections:
+                pdf.set_font("Arial", 'B', 12)
+                pdf.cell(0, 10, f"Top {top_n} Categories", ln=True)
+                cat_cols = df.select_dtypes(include=['object']).columns
+                pdf.set_font("Arial", '', 10)
+                for col in cat_cols:
+                    counts = df[col].value_counts().head(top_n)
+                    pdf.multi_cell(0, 5, f"{col}:\n{counts.to_string()}\n")
+                pdf.ln(5)
+
+            # --- Correlation Matrix ---
+            if "Correlation Matrix" in pdf_sections:
+                pdf.set_font("Arial", 'B', 12)
+                pdf.cell(0, 10, "Correlation Matrix", ln=True)
+                numeric_cols = df.select_dtypes(include=['number']).columns
+                if len(numeric_cols) > 1:
+                    corr = df[numeric_cols].corr()
+                    # plot correlation heatmap
+                    plt.figure(figsize=(6,4))
+                    import seaborn as sns
+                    sns.heatmap(corr, annot=True, fmt=".2f", cmap="coolwarm")
+                    plt.tight_layout()
+                    plt.savefig("corr.png")
+                    plt.close()
+                    pdf.image("corr.png", w=180)
+                    import os
+                    os.remove("corr.png")
+                else:
+                    pdf.set_font("Arial", '', 10)
+                    pdf.cell(0, 5, "Not enough numeric columns for correlation.", ln=True)
+                pdf.ln(5)
+
+            # --- Export PDF as BytesIO ---
+            import io
+            pdf_bytes = pdf.output(dest='S').encode('latin1')
+            buffer = io.BytesIO(pdf_bytes)
+
             st.download_button(
                 "Download PDF Report",
                 data=buffer.getvalue(),
                 file_name=f"{dataset_choice}_DataLens_Report.pdf",
                 mime="application/pdf"
             )
-            st.success("PDF generated successfully!")
+
+            st.success("PDF report generated!")
