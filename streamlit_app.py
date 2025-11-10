@@ -349,12 +349,6 @@ with tab5:
                                 outliers.to_excel(writer, sheet_name=f'Outliers_{ds_name[-1].upper()}', index=False)
             st.download_button("Download Excel Report", data=buffer.getvalue(), file_name=file_name, mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
             st.success(f"Exported: {', '.join(export_options)}")
-# -----------------------------
-# Tabs (add 6th tab for PDF)
-# -----------------------------
-tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
-    "Upload", "Cleaning", "EDA", "Compare & Contrast", "Export", "PDF Report"
-])
 
 # -----------------------------
 # Tab 6: PDF Report
