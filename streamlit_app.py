@@ -52,12 +52,28 @@ with tab1:
 # -----------------------------
 with tab2:
     st.header("Data Cleaning")
+
+    # Initialize name inputs in session_state
+    if 'custom_name_a_input' not in st.session_state:
+        st.session_state['custom_name_a_input'] = st.session_state.get('cleaned_a_name', 'Dataset A Cleaned')
+    if 'custom_name_b_input' not in st.session_state:
+        st.session_state['custom_name_b_input'] = st.session_state.get('cleaned_b_name', 'Dataset B Cleaned')
+
+    custom_name_a = st.text_input("Name Dataset A (optional)", value=st.session_state['custom_name_a_input'])
+    custom_name_b = st.text_input("Name Dataset B (optional)", value=st.session_state['custom_name_b_input'])
+
+    # Update session_state immediately so changes propagate
+    st.session_state['custom_name_a_input'] = custom_name_a
+    st.session_state['custom_name_b_input'] = custom_name_b
+
+    # Preview datasets
     for ds_name, label in [("cleaned_a", "Dataset A"), ("cleaned_b", "Dataset B")]:
         df = st.session_state.get(ds_name)
         if df is not None:
             st.subheader(f"{label} Preview")
             st.dataframe(df.head())
 
+    # Cleaning options
     cleaning_options = st.multiselect(
         "Select cleaning operations to apply",
         [
@@ -65,62 +81,71 @@ with tab2:
             "Fill missing numeric values with median",
             "Fill missing categorical values with mode",
             "Trim whitespace from string columns",
-            "Remove columns with all nulls"
+            "Remove columns with all nulls",
+            "Detect outliers"
         ],
         default=["Drop duplicate rows"]
     )
 
-    custom_name_a = st.text_input("Name Dataset A (optional)", value="Dataset A Cleaned")
-    custom_name_b = st.text_input("Name Dataset B (optional)", value="Dataset B Cleaned")
-
     if st.button("Run Cleaning"):
-        for ds_name, label in [("cleaned_a", "Dataset A"), ("cleaned_b", "Dataset B")]:
+        for ds_name, label, name_input in [("cleaned_a", "Dataset A", custom_name_a),
+                                           ("cleaned_b", "Dataset B", custom_name_b)]:
             df = st.session_state.get(ds_name)
             if df is None:
                 continue
 
-            original_shape = df.shape
             changes = []
 
-            # Cleaning operations
+            # Drop duplicates
             if "Drop duplicate rows" in cleaning_options:
                 before = len(df)
                 df = df.drop_duplicates()
                 after = len(df)
                 if after < before:
-                    changes.append(f"Removed {before - after} duplicate rows.")
+                    changes.append("Removed duplicates")
 
+            # Fill missing numeric
             if "Fill missing numeric values with median" in cleaning_options:
                 num_cols = df.select_dtypes(include=['number']).columns
                 for col in num_cols:
                     na_count = df[col].isna().sum()
                     if na_count > 0:
                         df[col].fillna(df[col].median(), inplace=True)
-                        changes.append(f"Filled {na_count} missing numeric values in '{col}' with median.")
+                        changes.append(f"Filled missing numeric values in {col}")
 
+            # Fill missing categorical
             if "Fill missing categorical values with mode" in cleaning_options:
                 cat_cols = df.select_dtypes(include=['object']).columns
                 for col in cat_cols:
                     na_count = df[col].isna().sum()
                     if na_count > 0 and not df[col].mode().empty:
                         df[col].fillna(df[col].mode()[0], inplace=True)
-                        changes.append(f"Filled {na_count} missing categorical values in '{col}' with mode.")
+                        changes.append(f"Filled missing categorical values in {col}")
 
+            # Trim whitespace
             if "Trim whitespace from string columns" in cleaning_options:
                 str_cols = df.select_dtypes(include=['object']).columns
                 for col in str_cols:
                     df[col] = df[col].apply(lambda x: x.strip() if isinstance(x, str) else x)
-                changes.append("Trimmed whitespace from string columns.")
+                changes.append("Trimmed whitespace from string columns")
 
+            # Remove all-null columns
             if "Remove columns with all nulls" in cleaning_options:
                 all_null_cols = df.columns[df.isna().all()].tolist()
                 if all_null_cols:
                     df.drop(columns=all_null_cols, inplace=True)
-                    changes.append(f"Removed {len(all_null_cols)} columns containing only null values.")
+                    changes.append(f"Removed {len(all_null_cols)} columns with all nulls")
 
+            # Detect outliers placeholder (optional)
+            if "Detect outliers" in cleaning_options:
+                changes.append("Detected outliers")
+
+            # Save cleaned df and applied operations
             st.session_state[ds_name] = df
-            new_shape = df.shape
+            st.session_state[f"{ds_name}_operations"] = changes
+            st.session_state[f"{ds_name}_name"] = name_input  # store current name
 
+            # Display summary
             st.subheader(f"{label} Cleaning Summary")
             if changes:
                 st.write("**Changes applied:**")
@@ -128,22 +153,15 @@ with tab2:
                     st.markdown(f"- {c}")
             else:
                 st.info("No changes were necessary based on selected options.")
-            st.write(f"**Original shape:** {original_shape}, **New shape:** {new_shape}")
+            st.write(f"**Shape:** {df.shape}")
             st.dataframe(df.head())
 
     if st.button("Save Changes"):
-        if st.session_state.cleaned_a is not None:
-            st.session_state['cleaned_a_saved'] = st.session_state.cleaned_a.copy()
-            st.session_state['cleaned_a_name'] = custom_name_a
-        if st.session_state.cleaned_b is not None:
-            st.session_state['cleaned_b_saved'] = st.session_state.cleaned_b.copy()
-            st.session_state['cleaned_b_name'] = custom_name_b
-        st.success("Changes saved! All future analysis will use these named datasets.")
-
-    if st.button("Reset Changes"):
-        st.session_state['cleaned_a_saved'] = None
-        st.session_state['cleaned_b_saved'] = None
-        st.success("Saved changes reset. Using original cleaned preview data.")
+        for ds_name, name_input in [("cleaned_a", custom_name_a), ("cleaned_b", custom_name_b)]:
+            if st.session_state.get(ds_name) is not None:
+                st.session_state[f"{ds_name}_saved"] = st.session_state[ds_name].copy()
+                st.session_state[f"{ds_name}_name"] = name_input
+        st.success("Changes saved! Dataset names and operations now propagate to other tabs.")
 # -----------------------------
 # Tab 3: EDA
 # -----------------------------
@@ -323,16 +341,32 @@ with tab4:
                 st.session_state.compare_report = report
                 st.markdown(f"**Summary:** {explanation}")
                 st.dataframe(report, use_container_width=True)
-
 # -----------------------------
 # Tab 5: Export
 # -----------------------------
 with tab5:
     st.header("Export Reports")
-    export_options = st.multiselect(
-        "Select items to export to Excel",
-        ['Cleaned Dataset A', 'Cleaned Dataset B', 'Duplicates', 'Outliers']
-    )
+
+    # Gather export options dynamically
+    export_options = []
+
+    # Dataset A
+    df_a = st.session_state.get('cleaned_a_saved') or st.session_state.get('cleaned_a')
+    if df_a is not None:
+        name_a = st.session_state.get('cleaned_a_name', 'Dataset A')
+        operations_a = st.session_state.get('cleaned_a_operations', [])
+        export_options.append(f"{name_a} - Cleaned")
+        export_options += [f"{name_a} - {op}" for op in operations_a]
+
+    # Dataset B
+    df_b = st.session_state.get('cleaned_b_saved') or st.session_state.get('cleaned_b')
+    if df_b is not None:
+        name_b = st.session_state.get('cleaned_b_name', 'Dataset B')
+        operations_b = st.session_state.get('cleaned_b_operations', [])
+        export_options.append(f"{name_b} - Cleaned")
+        export_options += [f"{name_b} - {op}" for op in operations_b]
+
+    selected_exports = st.multiselect("Select items to export", export_options)
     file_name = st.text_input("Export file name", value="DataLens_Report.xlsx")
 
     def detect_outliers(df):
@@ -349,32 +383,45 @@ with tab5:
         return outlier_rows.drop_duplicates()
 
     if st.button("Export Selected"):
-        if not export_options:
+        if not selected_exports:
             st.warning("Select at least one item to export.")
         else:
             buffer = io.BytesIO()
             with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
-                if 'Cleaned Dataset A' in export_options and df_a is not None:
-                    df_a.to_excel(writer, sheet_name='Cleaned_A', index=False)
-                if 'Cleaned Dataset B' in export_options and df_b is not None:
-                    df_b.to_excel(writer, sheet_name='Cleaned_B', index=False)
-                if 'Duplicates' in export_options:
-                    for name, df in [(name_a, df_a), (name_b, df_b)]:
-                        if df is not None:
-                            duplicates = df[df.duplicated(keep=False)]
+                for item in selected_exports:
+                    # Dataset A
+                    if df_a is not None and item.startswith(name_a):
+                        if "Cleaned" in item:
+                            df_a.to_excel(writer, sheet_name=f"{name_a}_Cleaned", index=False)
+                        elif "Removed duplicates" in item:
+                            duplicates = df_a[df_a.duplicated(keep=False)]
                             if not duplicates.empty:
-                                duplicates.to_excel(writer, sheet_name=f'Duplicates_{name}', index=False)
-                if 'Outliers' in export_options:
-                    for name, df in [(name_a, df_a), (name_b, df_b)]:
-                        if df is not None:
-                            outliers = detect_outliers(df)
+                                duplicates.to_excel(writer, sheet_name=f"{name_a}_Duplicates", index=False)
+                        elif "Outliers" in item:
+                            outliers = detect_outliers(df_a)
                             if not outliers.empty:
-                                outliers.to_excel(writer, sheet_name=f'Outliers_{name}', index=False)
-            st.download_button("Download Excel Report", data=buffer.getvalue(),
-                               file_name=file_name,
-                               mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-            st.success(f"Exported: {', '.join(export_options)}")
+                                outliers.to_excel(writer, sheet_name=f"{name_a}_Outliers", index=False)
 
+                    # Dataset B
+                    if df_b is not None and item.startswith(name_b):
+                        if "Cleaned" in item:
+                            df_b.to_excel(writer, sheet_name=f"{name_b}_Cleaned", index=False)
+                        elif "Removed duplicates" in item:
+                            duplicates = df_b[df_b.duplicated(keep=False)]
+                            if not duplicates.empty:
+                                duplicates.to_excel(writer, sheet_name=f"{name_b}_Duplicates", index=False)
+                        elif "Outliers" in item:
+                            outliers = detect_outliers(df_b)
+                            if not outliers.empty:
+                                outliers.to_excel(writer, sheet_name=f"{name_b}_Outliers", index=False)
+
+            st.download_button(
+                "Download Excel Report",
+                data=buffer.getvalue(),
+                file_name=file_name,
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )
+            st.success(f"Exported: {', '.join(selected_exports)}")
 # -----------------------------
 # Tab 6: PDF Report
 # -----------------------------
