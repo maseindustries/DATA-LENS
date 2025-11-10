@@ -116,16 +116,19 @@ with tab2:
                 # 1️⃣ HARD SAFETY CHECK: skip if dataset is None or invalid
                 if df is None or not isinstance(df, pd.DataFrame):
                     st.info(f"{label} is missing or invalid. Skipping cleaning.")
-                    continue
+                    continue  # NEXT DATASET
 
-                # 2️⃣ Safe: only call select_dtypes now
+                # 2️⃣ DEBUG: verify df type before any operation
+                st.write(f"DEBUG: Cleaning {label}, df type = {type(df)}")
+
+                # 3️⃣ Safe: only now call select_dtypes
                 numeric_cols = df.select_dtypes(include=['number']).columns
                 cat_cols = df.select_dtypes(include=['object']).columns
 
                 applied_ops = []
                 original_shape = df.shape
 
-                # 3️⃣ Apply cleaning operations
+                # 4️⃣ Apply cleaning operations
                 if "Drop duplicate rows" in cleaning_options:
                     before = len(df)
                     df = df.drop_duplicates()
@@ -157,28 +160,8 @@ with tab2:
                         df.drop(columns=all_null_cols, inplace=True)
                         applied_ops.append(f"Removed {len(all_null_cols)} columns with all nulls")
 
-                # 4️⃣ Save cleaned dataset to session state
+                # 5️⃣ Save cleaned dataset to session state
                 st.session_state[ds_name] = df
-                st.session_state[f"{ds_name}_name"] = custom_names[ds_name]
-                st.session_state[f"{ds_name}_operations"] = applied_ops
-                st.session_state[f"{ds_name}_saved"] = True
-
-                # 5️⃣ Display cleaning summary
-                new_shape = df.shape
-                st.subheader(f"{label} Cleaning Summary")
-                if applied_ops:
-                    st.write("**Changes applied:**")
-                    for op in applied_ops:
-                        st.markdown(f"- {op}")
-                else:
-                    st.info("No changes were necessary based on selected options.")
-                st.write(f"**Original shape:** {original_shape}, **New shape:** {new_shape}")
-                st.dataframe(df.head())
-
-        # Optional: Debug info
-        st.write("DEBUG: Session state types after cleaning")
-        st.write(f"cleaned_a type = {type(st.session_state.get('cleaned_a'))}")
-        st.write(f"cleaned_b type = {type(st.session_state.get('cleaned_b'))}")
 # Tab 3: EDA
 # -----------------------------
 with tab3:
