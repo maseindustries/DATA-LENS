@@ -5,60 +5,58 @@ import io
 import plotly.express as px
 from fpdf import FPDF
 from datetime import datetime
-import matplotlib.pyplot as plt
-import seaborn as sns
 import os
 
-# ----------------- Page Config -----------------
 st.set_page_config(layout="wide")
 st.title("DataLens")
 
-# ----------------- Session State -----------------
-for key in ["uploaded_file_a", "uploaded_file_b", "cleaned_a", "cleaned_b", "compare_report", "last_plotly_figure", "original_a", "original_b"]:
+# -----------------------------
+# Session state placeholders
+# -----------------------------
+for key in [
+    "cleaned_a", "cleaned_b", "cleaned_a_saved", "cleaned_b_saved",
+    "cleaned_a_name", "cleaned_b_name", "compare_report"
+]:
     if key not in st.session_state:
         st.session_state[key] = None
 
-# ----------------- Tabs -----------------
+# -----------------------------
+# Tabs
+# -----------------------------
 tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
-    "Upload", "Cleaning", "EDA", "Compare & Contrast", "Export", "PDF Report"
+    "Upload", "Cleaning", "EDA", "Compare & Contrast", "Export", "PDF Summary"
 ])
 
-# ----------------- Tab 1: Upload -----------------
+# -----------------------------
+# Tab 1: Upload
+# -----------------------------
 with tab1:
     st.header("Upload Datasets")
-
     uploaded_file_a = st.file_uploader("Upload Dataset A", type=["csv", "xlsx"], key="upload_a")
     uploaded_file_b = st.file_uploader("Upload Dataset B", type=["csv", "xlsx"], key="upload_b")
 
     if uploaded_file_a is not None:
-        st.session_state.uploaded_file_a = uploaded_file_a
         if uploaded_file_a.name.endswith(".csv"):
-            df_a = pd.read_csv(uploaded_file_a)
+            st.session_state.cleaned_a = pd.read_csv(uploaded_file_a)
         else:
-            df_a = pd.read_excel(uploaded_file_a)
-        st.session_state.cleaned_a = df_a.copy()
-        st.session_state.original_a = df_a.copy()
-        st.success(f"Loaded {uploaded_file_a.name}")
+            st.session_state.cleaned_a = pd.read_excel(uploaded_file_a)
 
     if uploaded_file_b is not None:
-        st.session_state.uploaded_file_b = uploaded_file_b
         if uploaded_file_b.name.endswith(".csv"):
-            df_b = pd.read_csv(uploaded_file_b)
+            st.session_state.cleaned_b = pd.read_csv(uploaded_file_b)
         else:
-            df_b = pd.read_excel(uploaded_file_b)
-        st.session_state.cleaned_b = df_b.copy()
-        st.session_state.original_b = df_b.copy()
-        st.success(f"Loaded {uploaded_file_b.name}")
+            st.session_state.cleaned_b = pd.read_excel(uploaded_file_b)
 
-# ----------------- Tab 2: Cleaning -----------------
+# -----------------------------
+# Tab 2: Cleaning
+# -----------------------------
 with tab2:
     st.header("Data Cleaning")
-
     for ds_name, label in [("cleaned_a", "Dataset A"), ("cleaned_b", "Dataset B")]:
         df = st.session_state.get(ds_name)
         if df is not None:
             st.subheader(f"{label} Preview")
-            st.dataframe(df.head(), use_container_width=True)
+            st.dataframe(df.head())
 
     cleaning_options = st.multiselect(
         "Select cleaning operations to apply",
@@ -72,7 +70,8 @@ with tab2:
         default=["Drop duplicate rows"]
     )
 
-    col_rename = st.text_input("Optional: Rename this dataset for reference", value="")
+    custom_name_a = st.text_input("Name Dataset A (optional)", value="Dataset A Cleaned")
+    custom_name_b = st.text_input("Name Dataset B (optional)", value="Dataset B Cleaned")
 
     if st.button("Run Cleaning"):
         for ds_name, label in [("cleaned_a", "Dataset A"), ("cleaned_b", "Dataset B")]:
@@ -83,6 +82,7 @@ with tab2:
             original_shape = df.shape
             changes = []
 
+            # Cleaning operations
             if "Drop duplicate rows" in cleaning_options:
                 before = len(df)
                 df = df.drop_duplicates()
@@ -129,107 +129,99 @@ with tab2:
             else:
                 st.info("No changes were necessary based on selected options.")
             st.write(f"**Original shape:** {original_shape}, **New shape:** {new_shape}")
-            st.dataframe(df.head(), use_container_width=True)
+            st.dataframe(df.head())
 
-    if st.button("Reset Cleaning"):
-        if st.session_state.original_a is not None:
-            st.session_state.cleaned_a = st.session_state.original_a.copy()
-        if st.session_state.original_b is not None:
-            st.session_state.cleaned_b = st.session_state.original_b.copy()
-        st.success("Datasets reset to original uploaded state.")
+    if st.button("Save Changes"):
+        if st.session_state.cleaned_a is not None:
+            st.session_state['cleaned_a_saved'] = st.session_state.cleaned_a.copy()
+            st.session_state['cleaned_a_name'] = custom_name_a
+        if st.session_state.cleaned_b is not None:
+            st.session_state['cleaned_b_saved'] = st.session_state.cleaned_b.copy()
+            st.session_state['cleaned_b_name'] = custom_name_b
+        st.success("Changes saved! All future analysis will use these named datasets.")
 
-# ----------------- Tab 3: EDA -----------------
+    if st.button("Reset Changes"):
+        st.session_state['cleaned_a_saved'] = None
+        st.session_state['cleaned_b_saved'] = None
+        st.success("Saved changes reset. Using original cleaned preview data.")
+
+# -----------------------------
+# Tab 3: EDA
+# -----------------------------
 with tab3:
     st.header("Exploratory Data Analysis")
     datasets_choice = st.multiselect(
         "Select dataset(s) for EDA",
-        ["Dataset A", "Dataset B"],
-        default=["Dataset A"]
+        [
+            st.session_state.get('cleaned_a_name') or "Dataset A",
+            st.session_state.get('cleaned_b_name') or "Dataset B"
+        ],
+        default=[st.session_state.get('cleaned_a_name') or "Dataset A"]
     )
 
     chart_type = st.selectbox(
         "Select chart type",
-        ["Histogram", "Boxplot", "Scatter", "Correlation Heatmap"]
+        ["All", "Histogram", "Boxplot", "Scatter", "Correlation Heatmap"]
     )
 
-    def plot_histogram(df, ds):
-        numeric_cols = df.select_dtypes(include=['number']).columns
-        col = st.selectbox(f"{ds} Histogram Column", numeric_cols, key=f"hist_{ds}")
-        fig = px.histogram(df, x=col, title=f"{ds} Histogram: {col}")
-        st.plotly_chart(fig, use_container_width=True)
-        st.session_state["last_plotly_figure"] = fig
-
-    def plot_boxplot(df, ds):
-        numeric_cols = df.select_dtypes(include=['number']).columns
-        col = st.selectbox(f"{ds} Boxplot Column", numeric_cols, key=f"box_{ds}")
-        fig = px.box(df, y=col, title=f"{ds} Boxplot: {col}")
-        st.plotly_chart(fig, use_container_width=True)
-        st.session_state["last_plotly_figure"] = fig
-
-    def plot_scatter(df, ds):
-        numeric_cols = df.select_dtypes(include=['number']).columns
-        all_cols = df.columns
-        x_col = st.selectbox(f"{ds} Scatter X", all_cols, key=f"scatter_x_{ds}")
-        y_col = st.selectbox(f"{ds} Scatter Y", numeric_cols, key=f"scatter_y_{ds}")
-        fig = px.scatter(df, x=x_col, y=y_col, title=f"{ds} Scatter: {x_col} vs {y_col}")
-        st.plotly_chart(fig, use_container_width=True)
-        st.session_state["last_plotly_figure"] = fig
-
-    def plot_corr_heatmap(df, ds):
-        numeric_cols = df.select_dtypes(include=['number']).columns
-        if len(numeric_cols) == 0:
-            st.warning(f"No numeric columns in {ds}")
-        else:
-            corr = df[numeric_cols].corr()
-            fig = px.imshow(corr, text_auto=True, title=f"{ds} Correlation Heatmap")
-            st.plotly_chart(fig, use_container_width=True)
-            st.session_state["last_plotly_figure"] = fig
-
     for ds in datasets_choice:
-        df = st.session_state.cleaned_a if ds == "Dataset A" else st.session_state.cleaned_b
+        df = None
+        if ds == (st.session_state.get('cleaned_a_name') or "Dataset A"):
+            df = st.session_state.get('cleaned_a_saved') or st.session_state.get('cleaned_a')
+        elif ds == (st.session_state.get('cleaned_b_name') or "Dataset B"):
+            df = st.session_state.get('cleaned_b_saved') or st.session_state.get('cleaned_b')
         if df is None:
             continue
 
-        st.subheader(f"{ds} - {chart_type}")
-        if chart_type == "Histogram":
-            plot_histogram(df, ds)
-        elif chart_type == "Boxplot":
-            plot_boxplot(df, ds)
-        elif chart_type == "Scatter":
-            plot_scatter(df, ds)
-        elif chart_type == "Correlation Heatmap":
-            plot_corr_heatmap(df, ds)
+        st.subheader(f"{ds} - {chart_type if chart_type != 'All' else 'Comprehensive EDA'}")
+        numeric_cols = df.select_dtypes(include=['number']).columns
+        all_cols = df.columns
 
-        # Insights paragraph
-        st.subheader(f"{ds} Insights")
-        n_rows, n_cols = df.shape
-        missing = df.isna().sum()
-        duplicates = df.duplicated().sum()
-        top_cat_summary = []
-        for col in df.select_dtypes(include=['object']).columns:
-            val = df[col].value_counts().head(1)
-            if not val.empty:
-                top_cat_summary.append(f"{col} → {val.index[0]} ({val.iloc[0]})")
-        corr = df.select_dtypes(include=['number']).corr()
-        high_corr = ""
-        if not corr.empty:
-            corr_unstacked = corr.abs().unstack()
-            corr_unstacked = corr_unstacked[corr_unstacked < 1]
-            if not corr_unstacked.empty:
-                top_corr = corr_unstacked.sort_values(ascending=False).head(1)
-                high_corr = f"Highest numeric correlation: {top_corr.index[0][0]} vs {top_corr.index[0][1]} = {top_corr.iloc[0]:.2f}"
-        insight_text = f"The dataset has {n_rows} rows and {n_cols} columns.\nColumns with most missing values: {missing[missing>0].to_dict()}\nDuplicate rows: {duplicates}\nTop categories: {', '.join(top_cat_summary)}\n{high_corr}"
-        st.text(insight_text)
-# ----------------- Tab 4: Compare & Contrast -----------------
+        col1, col2, col3 = st.columns(3)
+
+        with col1:
+            if chart_type in ["All", "Histogram"]:
+                hist_col = st.selectbox(f"Histogram Column ({ds})", numeric_cols, key=f"hist_{ds}")
+        with col2:
+            if chart_type in ["All", "Boxplot"]:
+                box_col = st.selectbox(f"Boxplot Column ({ds})", numeric_cols, key=f"box_{ds}")
+        with col3:
+            if chart_type in ["All", "Scatter"]:
+                scatter_x = st.selectbox(f"Scatter X ({ds})", all_cols, key=f"scatter_x_{ds}")
+                scatter_y = st.selectbox(f"Scatter Y ({ds})", numeric_cols, key=f"scatter_y_{ds}")
+
+        if st.button(f"Generate {ds} EDA"):
+            if chart_type in ["All", "Histogram"]:
+                fig = px.histogram(df, x=hist_col, title=f"{ds} Histogram: {hist_col}")
+                st.plotly_chart(fig, use_container_width=True)
+            if chart_type in ["All", "Boxplot"]:
+                fig = px.box(df, y=box_col, title=f"{ds} Boxplot: {box_col}")
+                st.plotly_chart(fig, use_container_width=True)
+            if chart_type in ["All", "Scatter"]:
+                fig = px.scatter(df, x=scatter_x, y=scatter_y, title=f"{ds} Scatter: {scatter_x} vs {scatter_y}")
+                st.plotly_chart(fig, use_container_width=True)
+            if chart_type in ["All", "Correlation Heatmap"]:
+                if len(numeric_cols) > 0:
+                    corr = df[numeric_cols].corr()
+                    fig = px.imshow(corr, text_auto=True, title=f"{ds} Correlation Heatmap")
+                    st.plotly_chart(fig, use_container_width=True)
+                else:
+                    st.warning(f"No numeric columns for correlation in {ds}.")
+                    # -----------------------------
+# Tab 4: Compare & Contrast
+# -----------------------------
 with tab4:
     st.header("Compare & Contrast")
-    if st.session_state.cleaned_a is None and st.session_state.cleaned_b is None:
-        st.warning("Upload at least one dataset first.")
-    else:
-        df_a = st.session_state.cleaned_a
-        df_b = st.session_state.cleaned_b
-        common_cols = list(set(df_a.columns).intersection(df_b.columns)) if df_a is not None and df_b is not None else []
+    df_a = st.session_state.get('cleaned_a_saved') or st.session_state.get('cleaned_a')
+    df_b = st.session_state.get('cleaned_b_saved') or st.session_state.get('cleaned_b')
+    name_a = st.session_state.get('cleaned_a_name') or "Dataset A"
+    name_b = st.session_state.get('cleaned_b_name') or "Dataset B"
 
+    if df_a is None and df_b is None:
+        st.warning("Upload and clean at least one dataset first.")
+    else:
+        common_cols = list(set(df_a.columns if df_a is not None else []).
+                           intersection(df_b.columns if df_b is not None else []))
         compare_type = st.selectbox(
             "Select Compare Type",
             ['Row presence check', 'Cell-by-cell comparison', 'Summary compare', 'Schema compare']
@@ -254,11 +246,14 @@ with tab4:
                 similarity = overlap / total * 100 if total else 0
 
                 report = pd.DataFrame({
-                    f'Only in A ({key_col})': list(only_in_a) + [None]*(max(len(only_in_a), len(only_in_b)) - len(only_in_a)),
-                    f'Only in B ({key_col})': list(only_in_b) + [None]*(max(len(only_in_a), len(only_in_b)) - len(only_in_b))
+                    f'Only in {name_a} ({key_col})': list(only_in_a) + [None]*(max(len(only_in_a), len(only_in_b)) - len(only_in_a)),
+                    f'Only in {name_b} ({key_col})': list(only_in_b) + [None]*(max(len(only_in_a), len(only_in_b)) - len(only_in_b))
                 })
+
                 st.metric("Row Match Rate", f"{similarity:.1f}%")
-                explanation = f"{len(only_in_a)} unique rows only in A, {len(only_in_b)} only in B, {overlap} rows appear in both."
+                explanation = (
+                    f"{len(only_in_a)} unique rows only in {name_a}, {len(only_in_b)} only in {name_b}, {overlap} rows appear in both."
+                )
 
             # Schema compare
             elif compare_type == 'Schema compare' and df_a is not None and df_b is not None:
@@ -271,11 +266,15 @@ with tab4:
                 similarity = shared_cols / total_cols * 100 if total_cols else 0
 
                 max_len = max(len(cols_only_a), len(cols_only_b))
-                cols_only_a += [None]*(max_len-len(cols_only_a))
-                cols_only_b += [None]*(max_len-len(cols_only_b))
-                report = pd.DataFrame({'Columns only in A': cols_only_a, 'Columns only in B': cols_only_b})
+                cols_only_a += [None] * (max_len - len(cols_only_a))
+                cols_only_b += [None] * (max_len - len(cols_only_b))
+                report = pd.DataFrame({
+                    f'Columns only in {name_a}': cols_only_a,
+                    f'Columns only in {name_b}': cols_only_b
+                })
+
                 st.metric("Schema Match Rate", f"{similarity:.1f}%")
-                explanation = f"{shared_cols} columns shared, {len(cols_only_a)} unique to A, {len(cols_only_b)} unique to B."
+                explanation = f"{shared_cols} columns shared, {len(cols_only_a)} unique to {name_a}, {len(cols_only_b)} unique to {name_b}."
 
             # Cell-by-cell comparison
             elif compare_type == 'Cell-by-cell comparison' and df_a is not None and df_b is not None:
@@ -301,26 +300,30 @@ with tab4:
 
             # Summary compare
             elif compare_type == 'Summary compare':
-                summary_a = df_a.describe(include='all').transpose() if df_a is not None else pd.DataFrame()
-                summary_b = df_b.describe(include='all').transpose() if df_b is not None else pd.DataFrame()
-                combined = summary_a.join(summary_b, lsuffix='_A', rsuffix='_B', how='outer')
-                combined['Mean Difference (if numeric)'] = combined.apply(
-                    lambda r: round(r['mean_A'] - r['mean_B'], 3)
-                    if 'mean_A' in r and pd.notna(r['mean_A']) and pd.notna(r['mean_B']) else None, axis=1
-                )
-                report = combined
+                dfs = []
+                if df_a is not None:
+                    summary_a = df_a.describe(include='all').transpose()
+                    summary_a.columns = [f"{c}_A" for c in summary_a.columns]
+                    dfs.append(summary_a)
+                if df_b is not None:
+                    summary_b = df_b.describe(include='all').transpose()
+                    summary_b.columns = [f"{c}_B" for c in summary_b.columns]
+                    dfs.append(summary_b)
+                report = pd.concat(dfs, axis=1)
                 explanation = "Side-by-side summary statistics comparison."
 
             if report is not None:
                 st.session_state.compare_report = report
                 st.markdown(f"**Summary:** {explanation}")
                 st.dataframe(report, use_container_width=True)
-# ----------------- Tab 5: Export -----------------
+                # -----------------------------
+# Tab 5: Export
+# -----------------------------
 with tab5:
     st.header("Export Reports")
     export_options = st.multiselect(
         "Select items to export to Excel",
-        ['Cleaned Dataset A', 'Cleaned Dataset B', 'Duplicates', 'Outliers']
+        [name_a, name_b, 'Duplicates', 'Outliers']
     )
     file_name = st.text_input("Export file name", value="DataLens_Report.xlsx")
 
@@ -343,38 +346,35 @@ with tab5:
         else:
             buffer = io.BytesIO()
             with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
-                if 'Cleaned Dataset A' in export_options and st.session_state.cleaned_a is not None:
-                    st.session_state.cleaned_a.to_excel(writer, sheet_name='Cleaned_A', index=False)
-                if 'Cleaned Dataset B' in export_options and st.session_state.cleaned_b is not None:
-                    st.session_state.cleaned_b.to_excel(writer, sheet_name='Cleaned_B', index=False)
+                if name_a in export_options and df_a is not None:
+                    df_a.to_excel(writer, sheet_name=name_a[:31], index=False)
+                if name_b in export_options and df_b is not None:
+                    df_b.to_excel(writer, sheet_name=name_b[:31], index=False)
                 if 'Duplicates' in export_options:
-                    for ds_name in ['cleaned_a', 'cleaned_b']:
-                        df = st.session_state.get(ds_name)
+                    for df, n in zip([df_a, df_b], [name_a, name_b]):
                         if df is not None:
                             duplicates = df[df.duplicated(keep=False)]
                             if not duplicates.empty:
-                                duplicates.to_excel(writer, sheet_name=f'Duplicates_{ds_name[-1].upper()}', index=False)
+                                duplicates.to_excel(writer, sheet_name=f'Duplicates_{n[:25]}', index=False)
                 if 'Outliers' in export_options:
-                    for ds_name in ['cleaned_a', 'cleaned_b']:
-                        df = st.session_state.get(ds_name)
+                    for df, n in zip([df_a, df_b], [name_a, name_b]):
                         if df is not None:
                             outliers = detect_outliers(df)
                             if not outliers.empty:
-                                outliers.to_excel(writer, sheet_name=f'Outliers_{ds_name[-1].upper()}', index=False)
-            st.download_button("Download Excel Report", data=buffer.getvalue(),
-                               file_name=file_name, mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+                                outliers.to_excel(writer, sheet_name=f'Outliers_{n[:25]}', index=False)
+            st.download_button("Download Excel Report", data=buffer.getvalue(), file_name=file_name, mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
             st.success(f"Exported: {', '.join(export_options)}")
-# ----------------- Tab 6: PDF Report -----------------
+
+# -----------------------------
+# Tab 6: PDF Report
+# -----------------------------
 with tab6:
     st.header("Generate PDF Report")
-
     dataset_choice = st.selectbox(
         "Select Dataset for PDF Report",
-        ["Dataset A", "Dataset B"]
+        [name_a, name_b]
     )
-    df = st.session_state.cleaned_a if dataset_choice == "Dataset A" else st.session_state.cleaned_b
-    uploaded_file = st.session_state.uploaded_file_a if dataset_choice == "Dataset A" else st.session_state.uploaded_file_b
-    dataset_name = uploaded_file.name if uploaded_file else dataset_choice
+    df = df_a if dataset_choice == name_a else df_b
 
     if df is None:
         st.warning("Please upload and clean the dataset first.")
@@ -382,31 +382,49 @@ with tab6:
         pdf_sections = st.multiselect(
             "Select sections to include in PDF",
             [
-                "Data Overview",
+                "Data Overview (rows, columns, missing, duplicates)",
                 "Descriptive Statistics",
                 "Outlier Summary",
                 "Top N Categories",
-                "Correlation Matrix",
-                "Charts",
-                "Insights Paragraph"
+                "Correlation Matrix"
             ],
-            default=["Data Overview", "Insights Paragraph"]
+            default=["Data Overview (rows, columns, missing, duplicates)"]
         )
+
         top_n = st.number_input("Top N categories for categorical columns", min_value=1, max_value=20, value=5)
+        include_charts = st.checkbox("Include charts in PDF", value=True)
+
+        def generate_insights(df):
+            rows, cols = df.shape
+            missing = df.isna().sum()
+            duplicates = df.duplicated().sum()
+            top_cats = {}
+            for col in df.select_dtypes(include='object').columns:
+                top = df[col].value_counts().head(3).to_dict()
+                top_cats[col] = top
+            insight_text = f"The dataset has {rows} rows and {cols} columns.\n"
+            if missing.sum() > 0:
+                insight_text += "Columns with most missing values — " + \
+                    "; ".join([f"{k}: {v} missing" for k, v in missing.items() if v > 0]) + ".\n"
+            if duplicates > 0:
+                insight_text += f"There are {duplicates} internal duplicate rows.\n"
+            for col, top in top_cats.items():
+                insight_text += f"Top categories in {col} → " + ", ".join([f"{k} ({v})" for k, v in top.items()]) + ".\n"
+            return insight_text
 
         if st.button("Generate PDF"):
             pdf = FPDF()
             pdf.add_page()
             pdf.set_font("Arial", 'B', 16)
-            pdf.cell(0, 10, f"{dataset_name} - DataLens Report", ln=True, align="C")
+            pdf.cell(0, 10, f"{dataset_choice} - DataLens Report", ln=True, align="C")
             pdf.ln(10)
 
             # Data Overview
-            if "Data Overview" in pdf_sections:
+            if "Data Overview (rows, columns, missing, duplicates)" in pdf_sections:
                 pdf.set_font("Arial", 'B', 12)
                 pdf.cell(0, 10, "Data Overview", ln=True)
                 pdf.set_font("Arial", '', 10)
-                pdf.multi_cell(0, 5, f"Number of rows: {df.shape[0]}\nNumber of columns: {df.shape[1]}")
+                pdf.multi_cell(0, 5, f"Rows: {df.shape[0]}\nColumns: {df.shape[1]}")
                 missing = df.isna().sum()
                 pdf.multi_cell(0, 5, f"Missing values per column:\n{missing.to_string()}")
                 duplicates = df.duplicated().sum()
@@ -422,50 +440,43 @@ with tab6:
                 pdf.multi_cell(0, 5, stats.to_string())
                 pdf.ln(5)
 
-            # Top N categories
+            # Outlier Summary
+            if "Outlier Summary" in pdf_sections:
+                pdf.set_font("Arial", 'B', 12)
+                pdf.cell(0, 10, "Outlier Summary", ln=True)
+                outliers = detect_outliers(df)
+                pdf.set_font("Arial", '', 8)
+                pdf.multi_cell(0, 5, f"Outliers detected: {len(outliers)}")
+                pdf.ln(5)
+
+            # Top N Categories
             if "Top N Categories" in pdf_sections:
                 pdf.set_font("Arial", 'B', 12)
                 pdf.cell(0, 10, f"Top {top_n} Categories", ln=True)
-                pdf.set_font("Arial", '', 10)
-                for col in df.select_dtypes(include=['object']).columns:
-                    top_vals = df[col].value_counts().head(top_n)
-                    pdf.multi_cell(0, 5, f"{col}:\n{top_vals.to_string()}")
+                pdf.set_font("Arial", '', 8)
+                for col in df.select_dtypes(include='object').columns:
+                    top = df[col].value_counts().head(top_n)
+                    pdf.multi_cell(0, 5, f"{col}:\n{top.to_string()}\n")
                 pdf.ln(5)
 
-            # Insights paragraph
-            if "Insights Paragraph" in pdf_sections:
-                pdf.set_font("Arial", 'B', 12)
-                pdf.cell(0, 10, "Insights", ln=True)
-                pdf.set_font("Arial", '', 10)
-                n_rows, n_cols = df.shape
-                missing_cols = missing[missing>0].to_dict()
-                top_cat_summary = []
-                for col in df.select_dtypes(include=['object']).columns:
-                    val = df[col].value_counts().head(1)
-                    if not val.empty:
-                        top_cat_summary.append(f"{col} → {val.index[0]} ({val.iloc[0]})")
-                corr = df.select_dtypes(include=['number']).corr()
-                high_corr = ""
-                if not corr.empty:
-                    corr_unstacked = corr.abs().unstack()
-                    corr_unstacked = corr_unstacked[corr_unstacked < 1]
-                    if not corr_unstacked.empty:
-                        top_corr = corr_unstacked.sort_values(ascending=False).head(1)
-                        high_corr = f"Highest numeric correlation: {top_corr.index[0][0]} vs {top_corr.index[0][1]} = {top_corr.iloc[0]:.2f}"
-                insight_text = f"The dataset has {n_rows} rows and {n_cols} columns.\nColumns with most missing values: {missing_cols}\nDuplicate rows: {duplicates}\nTop categories: {', '.join(top_cat_summary)}\n{high_corr}"
-                pdf.multi_cell(0, 5, insight_text)
+            # Correlation Matrix
+            if "Correlation Matrix" in pdf_sections:
+                numeric_cols = df.select_dtypes(include=['number']).columns
+                if len(numeric_cols) > 1:
+                    corr = df[numeric_cols].corr()
+                    pdf.set_font("Arial", 'B', 12)
+                    pdf.cell(0, 10, "Correlation Matrix", ln=True)
+                    pdf.set_font("Arial", '', 8)
+                    pdf.multi_cell(0, 5, corr.to_string())
+                    pdf.ln(5)
 
-            # Charts
-            if "Charts" in pdf_sections and st.session_state.get("last_plotly_figure") is not None:
-                fig = st.session_state["last_plotly_figure"]
-                chart_file = "temp_chart.png"
-                try:
-                    fig.write_image(chart_file)
-                    pdf.image(chart_file, w=180)
-                    os.remove(chart_file)
-                except Exception as e:
-                    st.warning(f"Could not export chart: {e}")
+            # Automatic Insights
+            pdf.set_font("Arial", 'B', 12)
+            pdf.cell(0, 10, "Insights", ln=True)
+            pdf.set_font("Arial", '', 10)
+            insights_text = generate_insights(df)
+            pdf.multi_cell(0, 5, insights_text)
 
-            out_bytes = pdf.output(dest='S').encode('latin-1')
-            st.download_button("Download PDF Report", data=out_bytes, file_name=f"{dataset_name}_report.pdf", mime="application/pdf")
-            st.success("PDF generated successfully!")
+            pdf_output = pdf.output(dest='S').encode('latin-1', 'replace')
+            st.download_button("Download PDF", data=pdf_output, file_name=f"{dataset_choice}_DataLens.pdf", mime="application/pdf")
+
