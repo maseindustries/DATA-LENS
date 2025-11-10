@@ -31,27 +31,40 @@ tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
 # -----------------------------
 with tab1:
     st.header("Upload Datasets")
+
     uploaded_file_a = st.file_uploader("Upload Dataset A", type=["csv", "xlsx"], key="upload_a")
     uploaded_file_b = st.file_uploader("Upload Dataset B", type=["csv", "xlsx"], key="upload_b")
 
-    if uploaded_file_a is not None:
-        if uploaded_file_a.name.endswith(".csv"):
-            st.session_state.cleaned_a = pd.read_csv(uploaded_file_a)
-        else:
-            st.session_state['cleaned_a'] = pd.read_excel(uploaded_file_a)
-        st.session_state['cleaned_a_name'] = st.session_state.get('cleaned_a_name', 'Dataset A')
-        st.session_state['cleaned_a_saved'] = None
-        st.session_state['cleaned_a_operations'] = []
+    if uploaded_file_a or uploaded_file_b:
+        if st.button("Confirm Upload"):
+            if uploaded_file_a is not None:
+                if uploaded_file_a.name.endswith(".csv"):
+                    st.session_state.cleaned_a = pd.read_csv(uploaded_file_a)
+                else:
+                    st.session_state.cleaned_a = pd.read_excel(uploaded_file_a)
+                st.session_state.cleaned_a_name = uploaded_file_a.name
+                st.session_state.cleaned_a_saved = None
+                st.session_state.cleaned_a_operations = []
 
-    if uploaded_file_b is not None:
-        if uploaded_file_b.name.endswith(".csv"):
-            st.session_state.cleaned_b = pd.read_csv(uploaded_file_b)
-        else:
-            st.session_state.cleaned_b = pd.read_excel(uploaded_file_b)
-            st.session_state['cleaned_b_name'] = st.session_state.get('cleaned_b_name', 'Dataset B')
-        st.session_state['cleaned_b_saved'] = None
-        st.session_state['cleaned_b_operations'] = []
-            
+            if uploaded_file_b is not None:
+                if uploaded_file_b.name.endswith(".csv"):
+                    st.session_state.cleaned_b = pd.read_csv(uploaded_file_b)
+                else:
+                    st.session_state.cleaned_b = pd.read_excel(uploaded_file_b)
+                st.session_state.cleaned_b_name = uploaded_file_b.name
+                st.session_state.cleaned_b_saved = None
+                st.session_state.cleaned_b_operations = []
+
+            st.success("Files uploaded successfully!")
+
+    # Optional: Show a preview of uploaded files
+    if st.session_state.cleaned_a is not None:
+        st.write(f"Preview of {st.session_state.cleaned_a_name}")
+        st.dataframe(st.session_state.cleaned_a.head())
+
+    if st.session_state.cleaned_b is not None:
+        st.write(f"Preview of {st.session_state.cleaned_b_name}")
+        st.dataframe(st.session_state.cleaned_b.head())         
 # -----------------------------
 # Tab 2: Cleaning
 # -----------------------------
