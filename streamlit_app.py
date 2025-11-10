@@ -38,30 +38,25 @@ with tab1:
         if uploaded_file_a.name.endswith(".csv"):
             st.session_state.cleaned_a = pd.read_csv(uploaded_file_a)
         else:
-            st.session_state.cleaned_a = pd.read_excel(uploaded_file_a)
+            st.session_state['cleaned_a'] = pd.read_excel(uploaded_file_a)
+        st.session_state['cleaned_a_name'] = st.session_state.get('cleaned_a_name', 'Dataset A')
+        st.session_state['cleaned_a_saved'] = None
+        st.session_state['cleaned_a_operations'] = []
 
     if uploaded_file_b is not None:
         if uploaded_file_b.name.endswith(".csv"):
             st.session_state.cleaned_b = pd.read_csv(uploaded_file_b)
         else:
             st.session_state.cleaned_b = pd.read_excel(uploaded_file_b)
-            # -----------------------------
+            st.session_state['cleaned_b_name'] = st.session_state.get('cleaned_b_name', 'Dataset B')
+        st.session_state['cleaned_b_saved'] = None
+        st.session_state['cleaned_b_operations'] = []
+            
+# -----------------------------
 # Tab 2: Cleaning
 # -----------------------------
 with tab2:
     st.header("Data Cleaning")
-
-    # Initialize name inputs
-    if 'custom_name_a_input' not in st.session_state:
-        st.session_state['custom_name_a_input'] = st.session_state.get('cleaned_a_name', 'Dataset A Cleaned')
-    if 'custom_name_b_input' not in st.session_state:
-        st.session_state['custom_name_b_input'] = st.session_state.get('cleaned_b_name', 'Dataset B Cleaned')
-
-    custom_name_a = st.text_input("Name Dataset A (optional)", value=st.session_state['custom_name_a_input'])
-    custom_name_b = st.text_input("Name Dataset B (optional)", value=st.session_state['custom_name_b_input'])
-
-    st.session_state['custom_name_a_input'] = custom_name_a
-    st.session_state['custom_name_b_input'] = custom_name_b
 
     # Preview datasets
     for ds_name, label in [("cleaned_a", "Dataset A"), ("cleaned_b", "Dataset B")]:
@@ -78,87 +73,79 @@ with tab2:
             "Fill missing numeric values with median",
             "Fill missing categorical values with mode",
             "Trim whitespace from string columns",
-            "Remove columns with all nulls",
-            "Detect outliers"
+            "Remove columns with all nulls"
         ],
         default=["Drop duplicate rows"]
     )
 
+    # Custom names
+    custom_name_a = st.text_input("Name Dataset A (optional)", value=st.session_state.get('cleaned_a_name', 'Dataset A'))
+    custom_name_b = st.text_input("Name Dataset B (optional)", value=st.session_state.get('cleaned_b_name', 'Dataset B'))
+
     if st.button("Run Cleaning"):
-        for ds_name, label, name_input in [("cleaned_a", "Dataset A", custom_name_a),
-                                           ("cleaned_b", "Dataset B", custom_name_b)]:
+        for ds_name, label, custom_name in [
+            ("cleaned_a", "Dataset A", custom_name_a),
+            ("cleaned_b", "Dataset B", custom_name_b)
+        ]:
             df = st.session_state.get(ds_name)
             if df is None:
                 continue
 
-            changes = []
+            original_shape = df.shape
+            applied_ops = []
 
-            # Drop duplicates
+            # Cleaning operations
             if "Drop duplicate rows" in cleaning_options:
                 before = len(df)
                 df = df.drop_duplicates()
                 after = len(df)
                 if after < before:
-                    changes.append("Removed duplicates")
+                    applied_ops.append("Duplicate rows removed")
 
-            # Fill missing numeric
             if "Fill missing numeric values with median" in cleaning_options:
                 num_cols = df.select_dtypes(include=['number']).columns
                 for col in num_cols:
                     na_count = df[col].isna().sum()
                     if na_count > 0:
                         df[col].fillna(df[col].median(), inplace=True)
-                        changes.append(f"Filled missing numeric values in {col}")
+                        applied_ops.append(f"Filled {na_count} missing numeric values in {col}")
 
-            # Fill missing categorical
             if "Fill missing categorical values with mode" in cleaning_options:
                 cat_cols = df.select_dtypes(include=['object']).columns
                 for col in cat_cols:
                     na_count = df[col].isna().sum()
                     if na_count > 0 and not df[col].mode().empty:
                         df[col].fillna(df[col].mode()[0], inplace=True)
-                        changes.append(f"Filled missing categorical values in {col}")
+                        applied_ops.append(f"Filled {na_count} missing categorical values in {col}")
 
-            # Trim whitespace
             if "Trim whitespace from string columns" in cleaning_options:
                 str_cols = df.select_dtypes(include=['object']).columns
                 for col in str_cols:
                     df[col] = df[col].apply(lambda x: x.strip() if isinstance(x, str) else x)
-                changes.append("Trimmed whitespace from string columns")
+                applied_ops.append("Trimmed whitespace from string columns")
 
-            # Remove all-null columns
             if "Remove columns with all nulls" in cleaning_options:
                 all_null_cols = df.columns[df.isna().all()].tolist()
                 if all_null_cols:
                     df.drop(columns=all_null_cols, inplace=True)
-                    changes.append(f"Removed {len(all_null_cols)} columns with all nulls")
+                    applied_ops.append(f"Removed {len(all_null_cols)} columns with all nulls")
 
-            # Detect outliers placeholder
-            if "Detect outliers" in cleaning_options:
-                changes.append("Detected outliers")
-
-            # Save cleaned df and operations
+            # Save cleaned dataset
             st.session_state[ds_name] = df
-            st.session_state[f"{ds_name}_operations"] = changes
-            st.session_state[f"{ds_name}_name"] = name_input
+            st.session_state[f"{ds_name}_name"] = custom_name
+            st.session_state[f"{ds_name}_operations"] = applied_ops
 
-            # Display summary
+            # Display cleaning summary
+            new_shape = df.shape
             st.subheader(f"{label} Cleaning Summary")
-            if changes:
+            if applied_ops:
                 st.write("**Changes applied:**")
-                for c in changes:
-                    st.markdown(f"- {c}")
+                for op in applied_ops:
+                    st.markdown(f"- {op}")
             else:
                 st.info("No changes were necessary based on selected options.")
-            st.write(f"**Shape:** {df.shape}")
+            st.write(f"**Original shape:** {original_shape}, **New shape:** {new_shape}")
             st.dataframe(df.head())
-
-    if st.button("Save Changes"):
-        for ds_name, name_input in [("cleaned_a", custom_name_a), ("cleaned_b", custom_name_b)]:
-            if st.session_state.get(ds_name) is not None:
-                st.session_state[f"{ds_name}_saved"] = st.session_state[ds_name].copy()
-                st.session_state[f"{ds_name}_name"] = name_input
-        st.success("Changes saved! Dataset names and operations now propagate to other tabs.")
 # -----------------------------
 # Tab 3: EDA
 # -----------------------------
@@ -223,7 +210,7 @@ with tab3:
                     st.plotly_chart(fig, use_container_width=True)
                 else:
                     st.warning(f"No numeric columns for correlation in {ds}.")
-# -----------------------------
+        
 # Tab 4: Compare & Contrast
 # -----------------------------
 with tab4:
@@ -239,7 +226,9 @@ with tab4:
     if df_a is None and df_b is None:
         st.warning("Upload and clean at least one dataset first.")
     else:
+        # Determine common columns safely
         common_cols = list(set(df_a.columns if df_a is not None else []).intersection(df_b.columns if df_b is not None else []))
+
         compare_type = st.selectbox(
             "Select Compare Type",
             ['Row presence check', 'Cell-by-cell comparison', 'Summary compare', 'Schema compare']
@@ -266,8 +255,10 @@ with tab4:
                 max_len = max(len(only_in_a), len(only_in_b))
                 only_in_a_list = list(only_in_a) + [None]*(max_len - len(only_in_a))
                 only_in_b_list = list(only_in_b) + [None]*(max_len - len(only_in_b))
-                report = pd.DataFrame({f'Only in {name_a} ({key_col})': only_in_a_list,
-                                       f'Only in {name_b} ({key_col})': only_in_b_list})
+                report = pd.DataFrame({
+                    f'Only in {name_a} ({key_col})': only_in_a_list,
+                    f'Only in {name_b} ({key_col})': only_in_b_list
+                })
 
                 st.metric("Row Match Rate", f"{similarity:.1f}%")
                 explanation = f"{len(only_in_a)} unique rows only in {name_a}, {len(only_in_b)} only in {name_b}, {overlap} rows appear in both."
@@ -285,8 +276,10 @@ with tab4:
                 max_len = max(len(cols_only_a), len(cols_only_b))
                 cols_only_a += [None] * (max_len - len(cols_only_a))
                 cols_only_b += [None] * (max_len - len(cols_only_b))
-                report = pd.DataFrame({'Columns only in '+name_a: cols_only_a,
-                                       'Columns only in '+name_b: cols_only_b})
+                report = pd.DataFrame({
+                    'Columns only in '+name_a: cols_only_a,
+                    'Columns only in '+name_b: cols_only_b
+                })
                 st.metric("Schema Match Rate", f"{similarity:.1f}%")
                 explanation = f"{shared_cols} columns shared, {len(cols_only_a)} unique to {name_a}, {len(cols_only_b)} unique to {name_b}."
 
@@ -329,53 +322,32 @@ with tab4:
                 st.session_state.compare_report = report
                 st.markdown(f"**Summary:** {explanation}")
                 st.dataframe(report, use_container_width=True)
+
 # -----------------------------
 # Tab 5: Export
 # -----------------------------
 with tab5:
     st.header("Export Reports")
 
-    # Safely get datasets
-    df_a = st.session_state.get('cleaned_a_saved') or st.session_state.get('cleaned_a')
-    df_b = st.session_state.get('cleaned_b_saved') or st.session_state.get('cleaned_b')
-
-    name_a = st.session_state.get('cleaned_a_name', 'Dataset A')
-    name_b = st.session_state.get('cleaned_b_name', 'Dataset B')
-
-    # Safely get cleaning operations as lists
-    cleaned_a_ops = st.session_state.get('cleaned_a_operations')
-    if not isinstance(cleaned_a_ops, list):
-        cleaned_a_ops = []
-
-    cleaned_b_ops = st.session_state.get('cleaned_b_operations')
-    if not isinstance(cleaned_b_ops, list):
-        cleaned_b_ops = []
-
-    # Build dynamic export options
-    export_options = []
-
-    # Include cleaned dataset first
-    if df_a is not None:
-        export_options.append(f"Cleaned {name_a}")
-        for op in cleaned_a_ops:
-            export_options.append(f"{name_a} - {op}")
-
-    if df_b is not None:
-        export_options.append(f"Cleaned {name_b}")
-        for op in cleaned_b_ops:
-            export_options.append(f"{name_b} - {op}")
-
-    selected_exports = st.multiselect(
+    # Dynamically generate export options from cleaning operations
+    export_options = st.multiselect(
         "Select items to export to Excel",
-        export_options
+        options=[
+            f"{st.session_state.get('cleaned_a_name', 'Dataset A')} - {op}" 
+            for op in st.session_state.get('cleaned_a_operations', [])
+        ] + [
+            f"{st.session_state.get('cleaned_b_name', 'Dataset B')} - {op}" 
+            for op in st.session_state.get('cleaned_b_operations', [])
+        ] + ['Duplicates', 'Outliers'],
+        default=[]
     )
 
     file_name = st.text_input("Export file name", value="DataLens_Report.xlsx")
 
-    # Helper function to detect outliers
+    # Outlier detection function
     def detect_outliers(df):
         numeric_cols = df.select_dtypes(include=['number']).columns
-        if numeric_cols.empty:
+        if len(numeric_cols) == 0:
             return pd.DataFrame()
         outlier_rows = pd.DataFrame()
         for col in numeric_cols:
@@ -386,44 +358,48 @@ with tab5:
             outlier_rows = pd.concat([outlier_rows, df[mask]])
         return outlier_rows.drop_duplicates()
 
-    # Export button
     if st.button("Export Selected"):
-        if not selected_exports:
+        if not export_options:
             st.warning("Select at least one item to export.")
         else:
             buffer = io.BytesIO()
             with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
-                for item in selected_exports:
-                    # Dataset A exports
-                    if df_a is not None and item.startswith(name_a):
-                        if item == f"Cleaned {name_a}":
-                            df_a.to_excel(writer, sheet_name=f"Cleaned_{name_a}", index=False)
-                        elif "outlier" in item.lower():
-                            outliers = detect_outliers(df_a)
-                            if not outliers.empty:
-                                outliers.to_excel(writer, sheet_name=f"Outliers_{name_a}", index=False)
-                        elif "duplicate" in item.lower():
-                            duplicates = df_a[df_a.duplicated(keep=False)]
-                            if not duplicates.empty:
-                                duplicates.to_excel(writer, sheet_name=f"Duplicates_{name_a}", index=False)
-                        else:
-                            # Any other cleaning operation placeholder
-                            df_a.to_excel(writer, sheet_name=item[:31], index=False)  # Excel sheet name max 31 chars
+                # Export cleaning operations
+                for op in st.session_state.get('cleaned_a_operations', []):
+                    label = f"{st.session_state.get('cleaned_a_name', 'Dataset A')} - {op}"
+                    if label in export_options:
+                        df = st.session_state.get('cleaned_a')
+                        if df is not None:
+                            df.to_excel(writer, sheet_name=label[:31], index=False)  # Excel sheet name limit
 
-                    # Dataset B exports
-                    if df_b is not None and item.startswith(name_b):
-                        if item == f"Cleaned {name_b}":
-                            df_b.to_excel(writer, sheet_name=f"Cleaned_{name_b}", index=False)
-                        elif "outlier" in item.lower():
-                            outliers = detect_outliers(df_b)
-                            if not outliers.empty:
-                                outliers.to_excel(writer, sheet_name=f"Outliers_{name_b}", index=False)
-                        elif "duplicate" in item.lower():
-                            duplicates = df_b[df_b.duplicated(keep=False)]
+                for op in st.session_state.get('cleaned_b_operations', []):
+                    label = f"{st.session_state.get('cleaned_b_name', 'Dataset B')} - {op}"
+                    if label in export_options:
+                        df = st.session_state.get('cleaned_b')
+                        if df is not None:
+                            df.to_excel(writer, sheet_name=label[:31], index=False)
+
+                # Export duplicates
+                if 'Duplicates' in export_options:
+                    for name, df in [
+                        (st.session_state.get('cleaned_a_name', 'Dataset A'), st.session_state.get('cleaned_a')),
+                        (st.session_state.get('cleaned_b_name', 'Dataset B'), st.session_state.get('cleaned_b'))
+                    ]:
+                        if df is not None:
+                            duplicates = df[df.duplicated(keep=False)]
                             if not duplicates.empty:
-                                duplicates.to_excel(writer, sheet_name=f"Duplicates_{name_b}", index=False)
-                        else:
-                            df_b.to_excel(writer, sheet_name=item[:31], index=False)
+                                duplicates.to_excel(writer, sheet_name=f'Duplicates_{name[:25]}', index=False)
+
+                # Export outliers
+                if 'Outliers' in export_options:
+                    for name, df in [
+                        (st.session_state.get('cleaned_a_name', 'Dataset A'), st.session_state.get('cleaned_a')),
+                        (st.session_state.get('cleaned_b_name', 'Dataset B'), st.session_state.get('cleaned_b'))
+                    ]:
+                        if df is not None:
+                            outliers = detect_outliers(df)
+                            if not outliers.empty:
+                                outliers.to_excel(writer, sheet_name=f'Outliers_{name[:25]}', index=False)
 
             st.download_button(
                 "Download Excel Report",
@@ -431,14 +407,14 @@ with tab5:
                 file_name=file_name,
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             )
-            st.success(f"Exported: {', '.join(selected_exports)}")
-
+            st.success(f"Exported: {', '.join(export_options)}")
 # -----------------------------
 # Tab 6: PDF Report
 # -----------------------------
 with tab6:
     st.header("Generate PDF Report")
 
+    # Select dataset safely
     name_a = st.session_state.get('cleaned_a_name', 'Dataset A')
     name_b = st.session_state.get('cleaned_b_name', 'Dataset B')
 
@@ -446,23 +422,20 @@ with tab6:
         "Select Dataset for PDF Report",
         [name_a, name_b]
     )
-
-    if dataset_choice == name_a:
-        df = st.session_state['cleaned_a_saved'] if st.session_state.get('cleaned_a_saved') is not None else st.session_state.get('cleaned_a')
-    else:
-        df = st.session_state['cleaned_b_saved'] if st.session_state.get('cleaned_b_saved') is not None else st.session_state.get('cleaned_b')
+    df = st.session_state.get('cleaned_a') if dataset_choice == name_a else st.session_state.get('cleaned_b')
 
     if df is None:
         st.warning("Please upload and clean the dataset first.")
     else:
+        # Sections to include
         pdf_sections = st.multiselect(
             "Select sections to include in PDF",
             [
                 "Data Overview (rows, columns, missing, duplicates)",
                 "Descriptive Statistics",
                 "Outlier Summary",
+                "Cleaning Operations",
                 "Top N Categories",
-                "Correlation Matrix",
                 "Charts",
                 "Insights Paragraph"
             ],
@@ -503,9 +476,31 @@ with tab6:
             if "Outlier Summary" in pdf_sections:
                 pdf.set_font("Arial", 'B', 12)
                 pdf.cell(0, 10, "Outlier Summary", ln=True)
-                outliers = detect_outliers(df)
+                numeric_cols = df.select_dtypes(include=['number']).columns
+                outliers = pd.DataFrame()
+                if len(numeric_cols) > 0:
+                    for col in numeric_cols:
+                        Q1 = df[col].quantile(0.25)
+                        Q3 = df[col].quantile(0.75)
+                        IQR = Q3 - Q1
+                        mask = (df[col] < Q1 - 1.5 * IQR) | (df[col] > Q3 + 1.5 * IQR)
+                        outliers = pd.concat([outliers, df[mask]])
+                    outliers = outliers.drop_duplicates()
                 pdf.set_font("Arial", '', 10)
                 pdf.multi_cell(0, 5, f"Found {len(outliers)} outlier rows")
+                pdf.ln(5)
+
+            # Cleaning Operations
+            if "Cleaning Operations" in pdf_sections:
+                pdf.set_font("Arial", 'B', 12)
+                pdf.cell(0, 10, "Applied Cleaning Operations", ln=True)
+                pdf.set_font("Arial", '', 10)
+                ops = st.session_state.get('cleaned_a_operations' if dataset_choice == name_a else 'cleaned_b_operations', [])
+                if ops:
+                    for op in ops:
+                        pdf.multi_cell(0, 5, f"- {op}")
+                else:
+                    pdf.multi_cell(0, 5, "No cleaning operations applied.")
                 pdf.ln(5)
 
             # Top N Categories
@@ -533,18 +528,16 @@ with tab6:
                 pdf.cell(0, 10, "Insights", ln=True)
                 pdf.set_font("Arial", '', 10)
                 insights = f"The dataset {dataset_choice} has {df.shape[0]} rows and {df.shape[1]} columns. "
-                if not df.empty:
-                    missing_summary = ", ".join([f"{col}: {val}" for col, val in df.isna().sum().items() if val > 0])
-                    if missing_summary:
-                        insights += f"Columns with missing values — {missing_summary}. "
-                    duplicates_count = df.duplicated().sum()
-                    if duplicates_count > 0:
-                        insights += f"There are {duplicates_count} duplicate rows. "
-                    cat_cols = df.select_dtypes(include=['object']).columns
-                    if len(cat_cols) > 0:
-                        sample_col = cat_cols[0]
-                        top_val = df[sample_col].value_counts().idxmax()
-                        insights += f"Top value in {sample_col}: {top_val}."
+                missing_summary = ", ".join([f"{col}: {val}" for col, val in df.isna().sum().items() if val > 0])
+                if missing_summary:
+                    insights += f"Columns with missing values — {missing_summary}. "
+                duplicates_count = df.duplicated().sum()
+                if duplicates_count > 0:
+                    insights += f"There are {duplicates_count} duplicate rows. "
+                if len(cat_cols) > 0:
+                    sample_col = cat_cols[0]
+                    top_val = df[sample_col].value_counts().idxmax()
+                    insights += f"Top value in {sample_col}: {top_val}."
                 pdf.multi_cell(0, 5, insights)
                 pdf.ln(5)
 
