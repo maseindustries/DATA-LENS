@@ -15,18 +15,17 @@ st.title("DataLens")
 # -----------------------------
 for key in [
     "cleaned_a", "cleaned_b", "cleaned_a_saved", "cleaned_b_saved",
-    "cleaned_a_name", "cleaned_b_name", "compare_report"
+    "cleaned_a_name", "cleaned_b_name", "cleaned_a_operations", "cleaned_b_operations",
+    "compare_report"
 ]:
     if key not in st.session_state:
         st.session_state[key] = None
-
 # -----------------------------
 # Tabs
 # -----------------------------
 tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
     "Upload", "Cleaning", "EDA", "Compare & Contrast", "Export", "PDF Summary"
 ])
-
 # -----------------------------
 # Tab 1: Upload
 # -----------------------------
@@ -46,14 +45,13 @@ with tab1:
             st.session_state.cleaned_b = pd.read_csv(uploaded_file_b)
         else:
             st.session_state.cleaned_b = pd.read_excel(uploaded_file_b)
-
-# -----------------------------
+            # -----------------------------
 # Tab 2: Cleaning
 # -----------------------------
 with tab2:
     st.header("Data Cleaning")
 
-    # Initialize name inputs in session_state
+    # Initialize name inputs
     if 'custom_name_a_input' not in st.session_state:
         st.session_state['custom_name_a_input'] = st.session_state.get('cleaned_a_name', 'Dataset A Cleaned')
     if 'custom_name_b_input' not in st.session_state:
@@ -62,7 +60,6 @@ with tab2:
     custom_name_a = st.text_input("Name Dataset A (optional)", value=st.session_state['custom_name_a_input'])
     custom_name_b = st.text_input("Name Dataset B (optional)", value=st.session_state['custom_name_b_input'])
 
-    # Update session_state immediately so changes propagate
     st.session_state['custom_name_a_input'] = custom_name_a
     st.session_state['custom_name_b_input'] = custom_name_b
 
@@ -136,14 +133,14 @@ with tab2:
                     df.drop(columns=all_null_cols, inplace=True)
                     changes.append(f"Removed {len(all_null_cols)} columns with all nulls")
 
-            # Detect outliers placeholder (optional)
+            # Detect outliers placeholder
             if "Detect outliers" in cleaning_options:
                 changes.append("Detected outliers")
 
-            # Save cleaned df and applied operations
+            # Save cleaned df and operations
             st.session_state[ds_name] = df
             st.session_state[f"{ds_name}_operations"] = changes
-            st.session_state[f"{ds_name}_name"] = name_input  # store current name
+            st.session_state[f"{ds_name}_name"] = name_input
 
             # Display summary
             st.subheader(f"{label} Cleaning Summary")
@@ -168,14 +165,13 @@ with tab2:
 with tab3:
     st.header("Exploratory Data Analysis")
 
-    # Prepare display names safely
-    name_a_display = st.session_state.get('cleaned_a_name') or "Dataset A"
-    name_b_display = st.session_state.get('cleaned_b_name') or "Dataset B"
-
     datasets_choice = st.multiselect(
         "Select dataset(s) for EDA",
-        [name_a_display, name_b_display],
-        default=[name_a_display]
+        [
+            st.session_state.get('cleaned_a_name') or "Dataset A",
+            st.session_state.get('cleaned_b_name') or "Dataset B"
+        ],
+        default=[st.session_state.get('cleaned_a_name') or "Dataset A"]
     )
 
     chart_type = st.selectbox(
@@ -184,16 +180,13 @@ with tab3:
     )
 
     for ds in datasets_choice:
-        # Safely get the correct DataFrame
-        if ds == name_a_display:
+        # Safely retrieve the DataFrame
+        if ds == st.session_state.get('cleaned_a_name', 'Dataset A'):
             df = st.session_state['cleaned_a_saved'] if st.session_state.get('cleaned_a_saved') is not None else st.session_state.get('cleaned_a')
-        elif ds == name_b_display:
-            df = st.session_state['cleaned_b_saved'] if st.session_state.get('cleaned_b_saved') is not None else st.session_state.get('cleaned_b')
         else:
-            df = None
+            df = st.session_state['cleaned_b_saved'] if st.session_state.get('cleaned_b_saved') is not None else st.session_state.get('cleaned_b')
 
         if df is None:
-            st.warning(f"{ds} is not available for EDA.")
             continue
 
         st.subheader(f"{ds} - {chart_type if chart_type != 'All' else 'Comprehensive EDA'}")
@@ -230,23 +223,18 @@ with tab3:
                     st.plotly_chart(fig, use_container_width=True)
                 else:
                     st.warning(f"No numeric columns for correlation in {ds}.")
-
 # -----------------------------
 # Tab 4: Compare & Contrast
 # -----------------------------
 with tab4:
     st.header("Compare & Contrast")
 
-    # Get datasets safely
-    df_a = st.session_state['cleaned_a_saved'] if st.session_state.get('cleaned_a_saved') is not None else (
-        st.session_state['cleaned_a'] if st.session_state.get('cleaned_a') is not None else None
-    )
-    df_b = st.session_state['cleaned_b_saved'] if st.session_state.get('cleaned_b_saved') is not None else (
-        st.session_state['cleaned_b'] if st.session_state.get('cleaned_b') is not None else None
-    )
+    # Safely get datasets
+    df_a = st.session_state['cleaned_a_saved'] if st.session_state.get('cleaned_a_saved') is not None else st.session_state.get('cleaned_a')
+    df_b = st.session_state['cleaned_b_saved'] if st.session_state.get('cleaned_b_saved') is not None else st.session_state.get('cleaned_b')
 
-    name_a = st.session_state.get('dataset_a_display_name', 'Dataset A')
-    name_b = st.session_state.get('dataset_b_display_name', 'Dataset B')
+    name_a = st.session_state.get('cleaned_a_name', 'Dataset A')
+    name_b = st.session_state.get('cleaned_b_name', 'Dataset B')
 
     if df_a is None and df_b is None:
         st.warning("Upload and clean at least one dataset first.")
@@ -347,28 +335,37 @@ with tab4:
 with tab5:
     st.header("Export Reports")
 
-    # Gather export options dynamically
+    # Safely get datasets
+    df_a = st.session_state['cleaned_a_saved'] if st.session_state.get('cleaned_a_saved') is not None else st.session_state.get('cleaned_a')
+    df_b = st.session_state['cleaned_b_saved'] if st.session_state.get('cleaned_b_saved') is not None else st.session_state.get('cleaned_b')
+
+    name_a = st.session_state.get('cleaned_a_name', 'Dataset A')
+    name_b = st.session_state.get('cleaned_b_name', 'Dataset B')
+
+    # Build dynamic export options based on cleaning operations
     export_options = []
 
-    # Dataset A
-    df_a = st.session_state.get('cleaned_a_saved') or st.session_state.get('cleaned_a')
     if df_a is not None:
-        name_a = st.session_state.get('cleaned_a_name', 'Dataset A')
-        operations_a = st.session_state.get('cleaned_a_operations', [])
-        export_options.append(f"{name_a} - Cleaned")
-        export_options += [f"{name_a} - {op}" for op in operations_a]
-
-    # Dataset B
-    df_b = st.session_state.get('cleaned_b_saved') or st.session_state.get('cleaned_b')
+        for op in st.session_state.get('cleaned_a_operations', []):
+            export_options.append(f"{name_a} - {op}")
     if df_b is not None:
-        name_b = st.session_state.get('cleaned_b_name', 'Dataset B')
-        operations_b = st.session_state.get('cleaned_b_operations', [])
-        export_options.append(f"{name_b} - Cleaned")
-        export_options += [f"{name_b} - {op}" for op in operations_b]
+        for op in st.session_state.get('cleaned_b_operations', []):
+            export_options.append(f"{name_b} - {op}")
 
-    selected_exports = st.multiselect("Select items to export", export_options)
+    # Always include cleaned datasets
+    if df_a is not None:
+        export_options.insert(0, f"Cleaned {name_a}")
+    if df_b is not None:
+        export_options.insert(1, f"Cleaned {name_b}")
+
+    selected_exports = st.multiselect(
+        "Select items to export to Excel",
+        export_options
+    )
+
     file_name = st.text_input("Export file name", value="DataLens_Report.xlsx")
 
+    # Helper function for detecting outliers
     def detect_outliers(df):
         numeric_cols = df.select_dtypes(include=['number']).columns
         if numeric_cols.empty:
@@ -389,32 +386,25 @@ with tab5:
             buffer = io.BytesIO()
             with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
                 for item in selected_exports:
-                    # Dataset A
                     if df_a is not None and item.startswith(name_a):
-                        if "Cleaned" in item:
-                            df_a.to_excel(writer, sheet_name=f"{name_a}_Cleaned", index=False)
-                        elif "Removed duplicates" in item:
-                            duplicates = df_a[df_a.duplicated(keep=False)]
-                            if not duplicates.empty:
-                                duplicates.to_excel(writer, sheet_name=f"{name_a}_Duplicates", index=False)
-                        elif "Outliers" in item:
-                            outliers = detect_outliers(df_a)
-                            if not outliers.empty:
-                                outliers.to_excel(writer, sheet_name=f"{name_a}_Outliers", index=False)
-
-                    # Dataset B
+                        if item == f"Cleaned {name_a}":
+                            df_a.to_excel(writer, sheet_name=f"Cleaned_{name_a}", index=False)
+                        elif "outlier" in item.lower():
+                            detect_outliers(df_a).to_excel(writer, sheet_name=f"Outliers_{name_a}", index=False)
+                        elif "duplicate" in item.lower():
+                            df_a[df_a.duplicated(keep=False)].to_excel(writer, sheet_name=f"Duplicates_{name_a}", index=False)
+                        else:
+                            # Any other cleaning operation placeholder
+                            df_a.to_excel(writer, sheet_name=item[:31], index=False)  # Sheet name max 31 chars
                     if df_b is not None and item.startswith(name_b):
-                        if "Cleaned" in item:
-                            df_b.to_excel(writer, sheet_name=f"{name_b}_Cleaned", index=False)
-                        elif "Removed duplicates" in item:
-                            duplicates = df_b[df_b.duplicated(keep=False)]
-                            if not duplicates.empty:
-                                duplicates.to_excel(writer, sheet_name=f"{name_b}_Duplicates", index=False)
-                        elif "Outliers" in item:
-                            outliers = detect_outliers(df_b)
-                            if not outliers.empty:
-                                outliers.to_excel(writer, sheet_name=f"{name_b}_Outliers", index=False)
-
+                        if item == f"Cleaned {name_b}":
+                            df_b.to_excel(writer, sheet_name=f"Cleaned_{name_b}", index=False)
+                        elif "outlier" in item.lower():
+                            detect_outliers(df_b).to_excel(writer, sheet_name=f"Outliers_{name_b}", index=False)
+                        elif "duplicate" in item.lower():
+                            df_b[df_b.duplicated(keep=False)].to_excel(writer, sheet_name=f"Duplicates_{name_b}", index=False)
+                        else:
+                            df_b.to_excel(writer, sheet_name=item[:31], index=False)
             st.download_button(
                 "Download Excel Report",
                 data=buffer.getvalue(),
@@ -428,11 +418,18 @@ with tab5:
 with tab6:
     st.header("Generate PDF Report")
 
+    name_a = st.session_state.get('cleaned_a_name', 'Dataset A')
+    name_b = st.session_state.get('cleaned_b_name', 'Dataset B')
+
     dataset_choice = st.selectbox(
         "Select Dataset for PDF Report",
         [name_a, name_b]
     )
-    df = df_a if dataset_choice == name_a else df_b
+
+    if dataset_choice == name_a:
+        df = st.session_state['cleaned_a_saved'] if st.session_state.get('cleaned_a_saved') is not None else st.session_state.get('cleaned_a')
+    else:
+        df = st.session_state['cleaned_b_saved'] if st.session_state.get('cleaned_b_saved') is not None else st.session_state.get('cleaned_b')
 
     if df is None:
         st.warning("Please upload and clean the dataset first.")
@@ -501,7 +498,7 @@ with tab6:
                     pdf.multi_cell(0, 5, f"{col}:\n{top_vals.to_string()}")
                     pdf.ln(2)
 
-            # Charts placeholder (user-selected)
+            # Charts placeholder
             if "Charts" in pdf_sections:
                 pdf.set_font("Arial", 'B', 12)
                 pdf.cell(0, 10, "Charts included", ln=True)
@@ -514,7 +511,6 @@ with tab6:
                 pdf.set_font("Arial", 'B', 12)
                 pdf.cell(0, 10, "Insights", ln=True)
                 pdf.set_font("Arial", '', 10)
-                # Example auto-insights (you can make this smarter)
                 insights = f"The dataset {dataset_choice} has {df.shape[0]} rows and {df.shape[1]} columns. "
                 if not df.empty:
                     missing_summary = ", ".join([f"{col}: {val}" for col, val in df.isna().sum().items() if val > 0])
@@ -523,7 +519,6 @@ with tab6:
                     duplicates_count = df.duplicated().sum()
                     if duplicates_count > 0:
                         insights += f"There are {duplicates_count} duplicate rows. "
-                    # Top category example
                     cat_cols = df.select_dtypes(include=['object']).columns
                     if len(cat_cols) > 0:
                         sample_col = cat_cols[0]
@@ -535,3 +530,4 @@ with tab6:
             # Output PDF
             out_bytes = pdf.output(dest='S').encode('latin-1')
             st.download_button("Download PDF", data=out_bytes, file_name=f"{dataset_choice}_Report.pdf")
+
