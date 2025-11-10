@@ -75,7 +75,7 @@ with tab3:
 
     chart_type = st.selectbox(
         "Select chart type",
-        ["Histogram", "Boxplot", "Scatter", "Correlation Heatmap"],
+        ["All", "Histogram", "Boxplot", "Scatter", "Correlation Heatmap"],
         key="eda_chart_type"
     )
 
@@ -88,9 +88,53 @@ with tab3:
             else:
                 continue
 
-            st.subheader(f"{ds} - {chart_type}")
-            # Insert your charting logic here
-            st.write(df.describe())
+            st.subheader(f"{ds} - {chart_type if chart_type != 'All' else 'Comprehensive EDA'}")
+
+            numeric_cols = df.select_dtypes(include=['number']).columns
+            all_cols = df.columns
+
+            def plot_histogram():
+                col = st.selectbox(f"Select column for {ds} histogram", numeric_cols, key=f"hist_{ds}")
+                fig = px.histogram(df, x=col, title=f"{ds} - Histogram of {col}")
+                st.plotly_chart(fig, use_container_width=True)
+
+            def plot_boxplot():
+                col = st.selectbox(f"Select column for {ds} boxplot", numeric_cols, key=f"box_{ds}")
+                fig = px.box(df, y=col, title=f"{ds} - Boxplot of {col}")
+                st.plotly_chart(fig, use_container_width=True)
+
+            def plot_scatter():
+                x_col = st.selectbox(f"X-axis column for {ds}", all_cols, key=f"scatter_x_{ds}")
+                y_col = st.selectbox(f"Y-axis column for {ds}", numeric_cols, key=f"scatter_y_{ds}")
+                fig = px.scatter(df, x=x_col, y=y_col, title=f"{ds} - Scatter: {x_col} vs {y_col}")
+                st.plotly_chart(fig, use_container_width=True)
+
+            def plot_corr_heatmap():
+                if len(numeric_cols) == 0:
+                    st.warning(f"No numeric columns found in {ds} for correlation heatmap.")
+                else:
+                    corr = df[numeric_cols].corr()
+                    fig = px.imshow(corr, text_auto=True, title=f"{ds} - Correlation Heatmap")
+                    st.plotly_chart(fig, use_container_width=True)
+
+            # Determine which charts to render
+            if chart_type == "All":
+                with st.expander(f"{ds} - Histogram"):
+                    plot_histogram()
+                with st.expander(f"{ds} - Boxplot"):
+                    plot_boxplot()
+                with st.expander(f"{ds} - Scatter"):
+                    plot_scatter()
+                with st.expander(f"{ds} - Correlation Heatmap"):
+                    plot_corr_heatmap()
+            elif chart_type == "Histogram":
+                plot_histogram()
+            elif chart_type == "Boxplot":
+                plot_boxplot()
+            elif chart_type == "Scatter":
+                plot_scatter()
+            elif chart_type == "Correlation Heatmap":
+                plot_corr_heatmap()
 
 # -----------------------------
 # Tab 4: Compare & Contrast
