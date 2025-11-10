@@ -11,3 +11,5 @@ tqdm
 setuptools
 xlsxwriter
 fpdf
+matplotlib
+seaborn
