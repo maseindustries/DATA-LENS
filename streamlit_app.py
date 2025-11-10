@@ -214,7 +214,7 @@ with tab4:
     st.header("Compare & Contrast")
 
     if st.session_state.cleaned_a is None or st.session_state.cleaned_b is None:
-        st.warning("Please run cleaning or upload both datasets first")
+        st.warning("Please upload and clean both datasets first.")
     else:
         common_cols = list(set(st.session_state.cleaned_a.columns).intersection(st.session_state.cleaned_b.columns))
 
@@ -233,28 +233,46 @@ with tab4:
             )
 
         if st.button("Run Compare", key="run_compare"):
+            df_a = st.session_state.cleaned_a.copy()
+            df_b = st.session_state.cleaned_b.copy()
             report = None
+            explanation = ""
 
-            # Row presence check
+            # --- Row presence check ---
             if compare_type == 'Row presence check':
                 if key_col:
-                    ids_a = set(st.session_state.cleaned_a[key_col])
-                    ids_b = set(st.session_state.cleaned_b[key_col])
+                    ids_a = set(df_a[key_col])
+                    ids_b = set(df_b[key_col])
                     only_in_a = ids_a - ids_b
                     only_in_b = ids_b - ids_a
+                    overlap = len(ids_a.intersection(ids_b))
+                    total = len(ids_a.union(ids_b))
+                    similarity = overlap / total * 100 if total else 0
+
                     report = pd.DataFrame({
                         f'Only in A ({key_col})': list(only_in_a) + [None]*(max(len(only_in_a), len(only_in_b)) - len(only_in_a)),
                         f'Only in B ({key_col})': list(only_in_b) + [None]*(max(len(only_in_a), len(only_in_b)) - len(only_in_b))
                     })
-                else:
-                    st.info("No key column selected. Skipping row presence check.")
 
-            # Schema compare
+                    st.metric("Row Match Rate", f"{similarity:.1f}%")
+                    explanation = (
+                        f"{len(only_in_a)} unique rows found only in **Dataset A**, "
+                        f"{len(only_in_b)} only in **Dataset B**, "
+                        f"and {overlap} rows appear in both datasets based on `{key_col}`."
+                    )
+                else:
+                    st.info("No key column selected — cannot perform row presence check.")
+
+            # --- Schema compare ---
             elif compare_type == 'Schema compare':
-                cols_a = set(st.session_state.cleaned_a.columns)
-                cols_b = set(st.session_state.cleaned_b.columns)
+                cols_a = set(df_a.columns)
+                cols_b = set(df_b.columns)
                 cols_only_a = list(cols_a - cols_b)
                 cols_only_b = list(cols_b - cols_a)
+                shared_cols = len(cols_a.intersection(cols_b))
+                total_cols = len(cols_a.union(cols_b))
+                similarity = shared_cols / total_cols * 100 if total_cols else 0
+
                 max_len = max(len(cols_only_a), len(cols_only_b))
                 cols_only_a += [None] * (max_len - len(cols_only_a))
                 cols_only_b += [None] * (max_len - len(cols_only_b))
@@ -263,42 +281,88 @@ with tab4:
                     'Columns only in B': cols_only_b
                 })
 
-            # Cell-by-cell comparison
+                st.metric("Schema Match Rate", f"{similarity:.1f}%")
+                explanation = (
+                    f"**{shared_cols}** columns shared between datasets, "
+                    f"**{len(cols_only_a)}** unique to A, and **{len(cols_only_b)}** unique to B."
+                )
+
+            # --- Cell-by-cell comparison ---
             elif compare_type == 'Cell-by-cell comparison':
                 diffs = []
-                max_len = max(len(st.session_state.cleaned_a), len(st.session_state.cleaned_b))
-                df_a = st.session_state.cleaned_a.reindex(range(max_len))
-                df_b = st.session_state.cleaned_b.reindex(range(max_len))
+                shared_cols = common_cols
+                total_diff = 0
 
-                for col in common_cols:
+                for col in shared_cols:
                     col_a = df_a[col]
                     col_b = df_b[col]
+
+                    # Align lengths
+                    min_len = min(len(col_a), len(col_b))
+                    col_a = col_a.iloc[:min_len]
+                    col_b = col_b.iloc[:min_len]
+
+                    mismatch = (col_a.fillna("NA") != col_b.fillna("NA"))
+                    diff_count = mismatch.sum()
+                    total_diff += diff_count
+
                     if pd.api.types.is_numeric_dtype(col_a):
-                        mean_diff = col_a.mean(skipna=True) - col_b.mean(skipna=True)
-                        diff_count = (col_a != col_b).sum()
-                        diffs.append({'Column': col, 'Mean Difference': mean_diff, 'Count Differences': diff_count})
+                        mean_diff = (col_a.mean(skipna=True) - col_b.mean(skipna=True))
+                        diffs.append({
+                            'Column': col,
+                            'Type': 'Numeric',
+                            'Mean Difference': round(mean_diff, 3),
+                            'Mismatched Count': diff_count
+                        })
                     else:
-                        mismatches = (col_a != col_b).sum()
-                        diffs.append({'Column': col, 'Mismatched Count': mismatches})
-                report = pd.DataFrame(diffs)
+                        diffs.append({
+                            'Column': col,
+                            'Type': 'Categorical',
+                            'Mean Difference': None,
+                            'Mismatched Count': diff_count
+                        })
 
-            # Summary compare
-            else:
-                summary_a = st.session_state.cleaned_a.describe(include='all')
-                summary_b = st.session_state.cleaned_b.describe(include='all')
-                report = pd.concat([summary_a, summary_b], keys=['Dataset A', 'Dataset B'])
+                report = pd.DataFrame(diffs).sort_values(by="Mismatched Count", ascending=False)
+                st.bar_chart(report.set_index("Column")["Mismatched Count"])
+                explanation = f"Compared {len(shared_cols)} columns; found **{total_diff}** differing cells."
 
+            # --- Summary compare ---
+            elif compare_type == 'Summary compare':
+                summary_a = df_a.describe(include='all').transpose()
+                summary_b = df_b.describe(include='all').transpose()
+                combined = summary_a.join(summary_b, lsuffix='_A', rsuffix='_B', how='outer')
+                combined['Mean Difference (if numeric)'] = combined.apply(
+                    lambda r: round(r['mean_A'] - r['mean_B'], 3)
+                    if 'mean_A' in r and pd.notna(r['mean_A']) and pd.notna(r['mean_B']) else None, axis=1
+                )
+                report = combined
+                explanation = "Side-by-side summary statistics comparison of both datasets."
+
+            # --- Display results ---
             if report is not None:
                 st.session_state.compare_report = report
-                st.dataframe(report)
+                st.markdown(f"**Summary:** {explanation}")
+                st.dataframe(report, use_container_width=True)
+
                 buffer = io.BytesIO()
                 report.to_excel(buffer, index=True)
                 st.download_button(
                     "Export Comparison Report",
-                    data=buffer,
+                    data=buffer.getvalue(),
                     file_name="comparison_report.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                 )
+
+                # Optional visualization summary
+                if compare_type in ["Row presence check", "Schema compare"]:
+                    st.subheader("Visual Summary")
+                    summary_data = {
+                        "Only in A": len(report.iloc[:, 0].dropna()),
+                        "Only in B": len(report.iloc[:, 1].dropna())
+                    }
+                    fig = px.bar(x=list(summary_data.keys()), y=list(summary_data.values()),
+                                 title=f"{compare_type} Summary", labels={"x": "", "y": "Count"})
+                    st.plotly_chart(fig, use_container_width=True)
 
 # -----------------------------
 # Tab 5: Modeling
