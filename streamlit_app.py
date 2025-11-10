@@ -357,155 +357,66 @@ with tab4:
                                  title=f"{compare_type} Summary", labels={"x": "", "y": "Count"})
                     st.plotly_chart(fig, use_container_width=True)
 # -----------------------------
-# Tab 5: Export & Insights
+# Tab 5: Export
 # -----------------------------
 with tab5:
-    st.header("Export & Insights")
+    st.header("Export Reports")
 
-    df_a = st.session_state.cleaned_a
-    df_b = st.session_state.cleaned_b
-    compare_report = st.session_state.compare_report
+    export_options = st.multiselect(
+        "Select items to export",
+        options=['Cleaned Dataset A', 'Cleaned Dataset B', 'Duplicates', 'Outliers'],
+        key="export_options"
+    )
 
-    # --- Generate Insights ---
-    if df_a is not None or df_b is not None:
-        st.subheader("High-Level Cleaning Insights")
-
-        def dataset_summary(cleaned_df, name):
-            desc = cleaned_df.describe(include='all').transpose()
-            desc["Missing %"] = cleaned_df.isna().mean() * 100
-            desc["Data Type"] = cleaned_df.dtypes.astype(str)
-            summary = pd.DataFrame({
-                "Dataset": name,
-                "Rows": [len(cleaned_df)],
-                "Columns": [len(cleaned_df.columns)],
-                "Missing Values (%)": [cleaned_df.isna().mean().mean() * 100],
-                "Duplicate Rows": [cleaned_df.duplicated().sum()],
-                "Numeric Columns": [len(cleaned_df.select_dtypes(include='number').columns)],
-                "Categorical Columns": [len(cleaned_df.select_dtypes(include='object').columns)]
-            })
-            return desc, summary
-
-        summaries = []
-        details = {}
-
-        if df_a is not None:
-            desc_a, summary_a = dataset_summary(df_a, "Dataset A")
-            summaries.append(summary_a)
-            details["Dataset A Summary"] = desc_a
-
-        if df_b is not None:
-            desc_b, summary_b = dataset_summary(df_b, "Dataset B")
-            summaries.append(summary_b)
-            details["Dataset B Summary"] = desc_b
-
-        if summaries:
-            combined_summary = pd.concat(summaries, ignore_index=True)
-            st.dataframe(combined_summary)
-        else:
-            st.info("No datasets available for insights.")
-
-    # --- Outlier Detection ---
-    if df_a is not None or df_b is not None:
-        st.subheader("Outlier Detection")
-
-        def detect_outliers(df, name):
-            outlier_summary = []
-            numeric_cols = df.select_dtypes(include='number').columns
-
-            for col in numeric_cols:
-                q1 = df[col].quantile(0.25)
-                q3 = df[col].quantile(0.75)
-                iqr = q3 - q1
-                lower = q1 - 1.5 * iqr
-                upper = q3 + 1.5 * iqr
-                mask = (df[col] < lower) | (df[col] > upper)
-                outliers = df[mask]
-                outlier_count = mask.sum()
-                if outlier_count > 0:
-                    outlier_summary.append({
-                        "Dataset": name,
-                        "Column": col,
-                        "Outlier Count": outlier_count,
-                        "Percent of Total": round((outlier_count / len(df)) * 100, 2),
-                        "Lower Bound": round(lower, 3),
-                        "Upper Bound": round(upper, 3),
-                        "Example Outliers": ", ".join(map(str, outliers[col].head(3).tolist()))
-                    })
-            return pd.DataFrame(outlier_summary)
-
-        outlier_reports = []
-        if df_a is not None:
-            outlier_reports.append(detect_outliers(df_a, "Dataset A"))
-        if df_b is not None:
-            outlier_reports.append(detect_outliers(df_b, "Dataset B"))
-
-        if outlier_reports:
-            combined_outliers = pd.concat(outlier_reports, ignore_index=True)
-            st.dataframe(combined_outliers)
-            st.metric("Total Outliers Detected", len(combined_outliers))
-        else:
-            st.info("No outliers detected.")
-
-    # --- Duplicate Rows ---
-    st.subheader("Duplicate Rows")
-
-    duplicate_reports = []
-    if df_a is not None:
-        duplicates_a = df_a[df_a.duplicated(keep=False)].copy()
-        if not duplicates_a.empty:
-            duplicates_a["Dataset"] = "Dataset A"
-            duplicate_reports.append(("Duplicates_A", duplicates_a))
-            st.metric("Dataset A Duplicate Rows", len(duplicates_a))
-            st.dataframe(duplicates_a.head())
-        else:
-            st.info("No duplicates found in Dataset A.")
-
-    if df_b is not None:
-        duplicates_b = df_b[df_b.duplicated(keep=False)].copy()
-        if not duplicates_b.empty:
-            duplicates_b["Dataset"] = "Dataset B"
-            duplicate_reports.append(("Duplicates_B", duplicates_b))
-            st.metric("Dataset B Duplicate Rows", len(duplicates_b))
-            st.dataframe(duplicates_b.head())
-        else:
-            st.info("No duplicates found in Dataset B.")
-
-    # --- Excel Export ---
-    st.subheader("Export Full Report")
-
-    export_name = st.text_input(
+    file_name = st.text_input(
         "Enter export file name",
         value="DataLens_Report.xlsx",
         key="export_filename"
     )
 
-    if st.button("Generate Excel Report", key="export_button"):
-        if not (df_a is not None or df_b is not None):
-            st.warning("Please upload and clean at least one dataset before exporting.")
+    def find_duplicates(df):
+        return df[df.duplicated(keep=False)]
+
+    def find_outliers(df):
+        numeric_cols = df.select_dtypes(include=['number']).columns
+        if len(numeric_cols) == 0:
+            return pd.DataFrame()  # no numeric columns
+        outlier_mask = pd.DataFrame(False, index=df.index, columns=numeric_cols)
+        for col in numeric_cols:
+            q1 = df[col].quantile(0.25)
+            q3 = df[col].quantile(0.75)
+            iqr = q3 - q1
+            outlier_mask[col] = (df[col] < (q1 - 1.5 * iqr)) | (df[col] > (q3 + 1.5 * iqr))
+        outlier_rows = df[outlier_mask.any(axis=1)]
+        return outlier_rows
+
+    if st.button("Export", key="export_button"):
+        if not export_options:
+            st.warning("Select at least one option to export.")
         else:
             buffer = io.BytesIO()
             with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
-                if df_a is not None:
-                    df_a.to_excel(writer, index=False, sheet_name="Cleaned_A")
-                if df_b is not None:
-                    df_b.to_excel(writer, index=False, sheet_name="Cleaned_B")
-                if summaries:
-                    combined_summary.to_excel(writer, index=False, sheet_name="HighLevel_Insights")
-                if outlier_reports:
-                    combined_outliers.to_excel(writer, index=False, sheet_name="Outlier_Report")
-                if duplicate_reports:
-                    for sheet_name, dup_df in duplicate_reports:
-                        dup_df.to_excel(writer, index=False, sheet_name=sheet_name)
-                if compare_report is not None:
-                    compare_report.to_excel(writer, index=True, sheet_name="Compare_Report")
+                if 'Cleaned Dataset A' in export_options and st.session_state.cleaned_a is not None:
+                    st.session_state.cleaned_a.to_excel(writer, sheet_name='Cleaned_A', index=False)
+                if 'Cleaned Dataset B' in export_options and st.session_state.cleaned_b is not None:
+                    st.session_state.cleaned_b.to_excel(writer, sheet_name='Cleaned_B', index=False)
+                if 'Duplicates' in export_options:
+                    if st.session_state.cleaned_a is not None:
+                        find_duplicates(st.session_state.cleaned_a).to_excel(writer, sheet_name='Duplicates_A', index=False)
+                    if st.session_state.cleaned_b is not None:
+                        find_duplicates(st.session_state.cleaned_b).to_excel(writer, sheet_name='Duplicates_B', index=False)
+                if 'Outliers' in export_options:
+                    if st.session_state.cleaned_a is not None:
+                        find_outliers(st.session_state.cleaned_a).to_excel(writer, sheet_name='Outliers_A', index=False)
+                    if st.session_state.cleaned_b is not None:
+                        find_outliers(st.session_state.cleaned_b).to_excel(writer, sheet_name='Outliers_B', index=False)
+
+                writer.save()
 
             st.download_button(
-                "📊 Download Excel Report",
+                "Download Excel Report",
                 data=buffer.getvalue(),
-                file_name=export_name,
+                file_name=file_name,
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             )
-
-            st.success(f"Export created successfully: {export_name}")
-
-
+            st.success(f"Export completed for: {', '.join(export_options)}")
