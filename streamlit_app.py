@@ -506,30 +506,31 @@ with tab4:
 with tab5:
     st.header("Export Data & Summaries")
 
-    # --- Cleaned Dataset Exports ---
-    st.subheader("Cleaned Datasets")
+    # --- Dataset A ---
     cleaned_a = st.session_state.get("cleaned_a")
     name_a = st.session_state.get("cleaned_a_name", "Dataset A")
-    cleaned_b = st.session_state.get("cleaned_b")
-    name_b = st.session_state.get("cleaned_b_name", "Dataset B")
-
     if isinstance(cleaned_a, pd.DataFrame):
-        st.write(f"**{name_a}** ({cleaned_a.shape[0]} rows x {cleaned_a.shape[1]} cols)")
+        st.subheader(f"{name_a} (Cleaned Dataset)")
+        st.write(f"Shape: {cleaned_a.shape}")
         buf_csv = io.BytesIO()
         cleaned_a.to_csv(buf_csv, index=False)
         buf_csv.seek(0)
         st.download_button(f"Download {name_a} as CSV", data=buf_csv, file_name=f"{name_a}.csv")
     else:
-        st.info(f"{name_a} is not available. Upload and clean in Tabs 1–2.")
+        st.info(f"{name_a} is not available. Upload & clean it in Tabs 1–2.")
 
+    # --- Dataset B ---
+    cleaned_b = st.session_state.get("cleaned_b")
+    name_b = st.session_state.get("cleaned_b_name", "Dataset B")
     if isinstance(cleaned_b, pd.DataFrame):
-        st.write(f"**{name_b}** ({cleaned_b.shape[0]} rows x {cleaned_b.shape[1]} cols)")
+        st.subheader(f"{name_b} (Cleaned Dataset)")
+        st.write(f"Shape: {cleaned_b.shape}")
         buf_csv = io.BytesIO()
         cleaned_b.to_csv(buf_csv, index=False)
         buf_csv.seek(0)
         st.download_button(f"Download {name_b} as CSV", data=buf_csv, file_name=f"{name_b}.csv")
     else:
-        st.info(f"{name_b} is not available. Upload and clean in Tabs 1–2.")
+        st.info(f"{name_b} is not available. Upload & clean it in Tabs 1–2.")
 
     st.markdown("---")
 
@@ -570,32 +571,6 @@ with tab5:
     compare_report = st.session_state.get("compare_report")
     if compare_report:
         st.write(f"Comparing **{compare_report['name_a']}** and **{compare_report['name_b']}**")
-        buf_excel = io.BytesIO()
-        with pd.ExcelWriter(buf_excel, engine='xlsxwriter') as writer:
-            A = st.session_state.get("cleaned_a")
-            B = st.session_state.get("cleaned_b")
-            keys = compare_report.get("selected_keys", [])
-
-            if isinstance(A, pd.DataFrame) and isinstance(B, pd.DataFrame) and keys:
-                merged = A.merge(B, on=keys, how="outer", indicator=True, suffixes=("_A","_B"))
-                only_a_df = merged[merged["_merge"]=="left_only"].drop(columns=["_merge"])
-                only_b_df = merged[merged["_merge"]=="right_only"].drop(columns=["_merge"])
-                both_df = merged[merged["_merge"]=="both"].drop(columns=["_merge"])
-
-                only_a_df.to_excel(writer, sheet_name=f"Only_in_{compare_report['name_a'][:28]}", index=False)
-                only_b_df.to_excel(writer, sheet_name=f"Only_in_{compare_report['name_b'][:28]}", index=False)
-                both_df.to_excel(writer, sheet_name="Matched_Both", index=False)
-
-            # Column differences
-            col_diff_df = pd.DataFrame({
-                f"Only in {compare_report['name_a']}": pd.Series(compare_report.get("only_cols_a", [])),
-                f"Only in {compare_report['name_b']}": pd.Series(compare_report.get("only_cols_b", []))
-            })
-            col_diff_df.to_excel(writer, sheet_name="Column_Differences", index=False)
-
-        buf_excel.seek(0)
-        st.download_button("Download Compare Report (Excel)", data=buf_excel, file_name="compare_report.xlsx")
+        st.info("Compare report download available when both datasets exist.")
     else:
         st.info("No comparison report available. Complete Compare & Contrast in Tab 4 first.")
-
- 
