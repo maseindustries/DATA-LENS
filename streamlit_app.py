@@ -23,8 +23,8 @@ for key in [
 # -----------------------------
 # Tabs
 # -----------------------------
-tab1, tab2, tab3, tab4, tab5 = st.tabs([
-    "Upload", "Cleaning", "EDA", "Compare & Contrast", "PDF Summary"
+tab1, tab2, tab3, tab4 = st.tabs([
+    "Upload", "Cleaning", "EDA", "Compare & Contrast"
 ])
 # -----------------------------
 # Tab 1: Upload
