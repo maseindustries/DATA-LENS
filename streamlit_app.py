@@ -506,79 +506,75 @@ with tab4:
 with tab5:
     st.header("Export Data & Summaries")
 
-    # --- Export cleaned datasets ---
+    # --- Cleaned Datasets ---
     st.subheader("Cleaned Datasets")
-    any_dataset = False
+    cleaned_any = False
     for ds_key, ds_name in [
         ("cleaned_a", st.session_state.get("cleaned_a_name", "Dataset A")),
         ("cleaned_b", st.session_state.get("cleaned_b_name", "Dataset B"))
     ]:
         df = st.session_state.get(ds_key)
         if isinstance(df, pd.DataFrame):
-            any_dataset = True
+            cleaned_any = True
             st.write(f"**{ds_name}** ({df.shape[0]} rows x {df.shape[1]} cols)")
             
-            # CSV download
+            # CSV
             buf_csv = io.BytesIO()
             df.to_csv(buf_csv, index=False)
             buf_csv.seek(0)
             st.download_button(f"Download {ds_name} as CSV", data=buf_csv, file_name=f"{ds_name}.csv")
             
-            # Excel download
+            # Excel
             buf_excel = io.BytesIO()
             with pd.ExcelWriter(buf_excel, engine='xlsxwriter') as writer:
                 df.to_excel(writer, index=False, sheet_name=ds_name[:31])
             buf_excel.seek(0)
             st.download_button(f"Download {ds_name} as Excel", data=buf_excel, file_name=f"{ds_name}.xlsx")
         else:
-            st.info(f"{ds_name} is not available for export.")
+            st.info(f"{ds_name} not available. Upload & clean it in Tabs 1–2.")
 
-    if not any_dataset:
-        st.info("No cleaned datasets are available. Upload and clean data in Tabs 1–2 to enable export.")
+    if not cleaned_any:
+        st.info("No cleaned datasets available. Complete Tabs 1–2 to enable export.")
 
     st.markdown("---")
 
-    # --- Export column summaries ---
+    # --- Column Summaries ---
     st.subheader("Column Summaries")
-    any_summary = False
+    summary_any = False
     for ds_key, ds_name in [
         ("cleaned_a", st.session_state.get("cleaned_a_name", "Dataset A")),
         ("cleaned_b", st.session_state.get("cleaned_b_name", "Dataset B"))
     ]:
         df = st.session_state.get(ds_key)
         if isinstance(df, pd.DataFrame):
-            any_summary = True
-            summary = []
-            for col in df.columns:
-                summary.append({
-                    "column": col,
-                    "dtype": str(df[col].dtype),
-                    "n_unique": int(df[col].nunique(dropna=True)),
-                    "n_missing": int(df[col].isna().sum())
-                })
-            summary_df = pd.DataFrame(summary)
+            summary_any = True
+            summary_df = pd.DataFrame({
+                "column": df.columns,
+                "dtype": [str(df[c].dtype) for c in df.columns],
+                "n_unique": [df[c].nunique(dropna=True) for c in df.columns],
+                "n_missing": [df[c].isna().sum() for c in df.columns]
+            })
             buf = io.BytesIO()
             summary_df.to_csv(buf, index=False)
             buf.seek(0)
             st.download_button(f"Download {ds_name} column summary", data=buf, file_name=f"{ds_name}_column_summary.csv")
         else:
-            st.info(f"No column summary available for {ds_name}.")
+            st.info(f"No column summary for {ds_name}.")
 
-    if not any_summary:
-        st.info("No datasets available for column summaries. Complete Tabs 1–2 first.")
+    if not summary_any:
+        st.info("No datasets available for column summaries.")
 
     st.markdown("---")
 
-    # --- Export comparison report ---
-    compare_report = st.session_state.get("compare_report")
+    # --- Compare & Contrast Report ---
     st.subheader("Compare & Contrast Report")
+    compare_report = st.session_state.get("compare_report")
     if compare_report:
         st.write(f"Comparing **{compare_report['name_a']}** and **{compare_report['name_b']}**")
-        
-        # Prepare Excel workbook
+
         buf_excel = io.BytesIO()
         with pd.ExcelWriter(buf_excel, engine='xlsxwriter') as writer:
-            # Only A/B/Both sheets
+            # Only export if datasets exist
             A = st.session_state.get("cleaned_a")
             B = st.session_state.get("cleaned_b")
             keys = compare_report.get("selected_keys", [])
@@ -603,4 +599,4 @@ with tab5:
         buf_excel.seek(0)
         st.download_button("Download Compare Report (Excel)", data=buf_excel, file_name="compare_report.xlsx")
     else:
-        st.info("No comparison report available. Complete Compare & Contrast in Tab 4 first.")
+        st.info("No comparison report available. Complete Compare & Contrast (Tab 4) first.")
