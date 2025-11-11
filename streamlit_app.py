@@ -205,15 +205,13 @@ with tab2:
         st.write("DEBUG: Session state types after cleaning")
         st.write(f"cleaned_a type = {type(st.session_state.get('cleaned_a'))}")
         st.write(f"cleaned_b type = {type(st.session_state.get('cleaned_b'))}")
-    # -----------------------------
-        # tab 3
-    # -----------------------------
-# -----------------------------
+   # -----------------------------
 # Tab 3: Exploratory Data Analysis (EDA)
 # -----------------------------
 with tab3:
     st.title("Exploratory Data Analysis (EDA)")
 
+    # Ensure saved_charts exists
     if "saved_charts" not in st.session_state:
         st.session_state["saved_charts"] = []
 
@@ -226,9 +224,9 @@ with tab3:
     if not available:
         st.warning("Please upload & clean at least one dataset in Tabs 1–2 before running EDA.")
     else:
-        left_col, center_col, right_col = st.columns([2,3,1])
+        left_col, center_col, right_col = st.columns([2, 3, 1])
 
-        # ------------------ LEFT ------------------
+        # ------------------ LEFT: Dataset overview ------------------
         with left_col:
             st.subheader("Dataset selection & overview")
             chosen_name = st.selectbox("Choose dataset", [name for _, name in available], key="eda_choose_ds")
@@ -238,7 +236,31 @@ with tab3:
             numeric_cols = df.select_dtypes(include=["number"]).columns.tolist()
             cat_cols = df.select_dtypes(include=["object", "category"]).columns.tolist()
 
-        # ------------------ CENTER ------------------
+            st.markdown(f"**{chosen_name}** — rows × cols: **{df.shape[0]} × {df.shape[1]}**")
+            st.write("Columns:", list(df.columns))
+
+            # Expanders for summaries
+            with st.expander("Missing values"):
+                missing = df.isna().sum()
+                if missing.sum() > 0:
+                    st.dataframe(missing[missing > 0].sort_values(ascending=False))
+                else:
+                    st.info("No missing values.")
+
+            with st.expander("Numeric summary"):
+                if numeric_cols:
+                    st.dataframe(df[numeric_cols].describe().T)
+                else:
+                    st.info("No numeric columns.")
+
+            with st.expander("Categorical summary"):
+                if cat_cols:
+                    sel_cat = st.selectbox("Pick a categorical column", options=cat_cols, key=f"{ds_key}_cat")
+                    st.dataframe(df[sel_cat].value_counts(dropna=False))
+                else:
+                    st.info("No categorical columns.")
+
+        # ------------------ CENTER: Charts ------------------
         with center_col:
             st.subheader("Charts")
             chart_options = [
@@ -248,10 +270,13 @@ with tab3:
                 "Scatter (numeric X & Y)",
                 "Correlation heatmap (numeric columns)"
             ]
-            chart_choice = st.selectbox("Choose chart", options=chart_options, key=f"{ds_key}_chart_choice")
-            chart_params = {}
-            fig = None
+            chart_choice = st.selectbox("Choose chart", chart_options, key=f"{ds_key}_chart_choice")
 
+            fig = None  # figure object
+            chart_params = {}  # for PDF saving
+            caption = st.text_input("Optional caption for PDF", key=f"{ds_key}_chart_caption")
+
+            # ------------------ Auto-generate figure ------------------
             if chart_choice == "Histogram (single numeric)" and numeric_cols:
                 x_col = st.selectbox("Numeric column", numeric_cols, key=f"{ds_key}_hist_x")
                 bins = st.number_input("Bins", min_value=5, max_value=500, value=30, step=1, key=f"{ds_key}_hist_bins")
@@ -260,13 +285,12 @@ with tab3:
                     color_col = st.selectbox("Color by (categorical)", [None]+cat_cols, key=f"{ds_key}_hist_color")
                 chart_params.update({"x_col": x_col, "bins": bins, "color_col": color_col})
 
-                # Render figure
-                if st.button("Show chart", key=f"{ds_key}_show_chart"):
-                    if color_col:
-                        fig = px.histogram(df, x=x_col, color=color_col, nbins=bins)
-                    else:
-                        fig = px.histogram(df, x=x_col, nbins=bins)
-                    st.plotly_chart(fig, use_container_width=True)
+                # Generate figure immediately
+                if color_col:
+                    fig = px.histogram(df, x=x_col, color=color_col, nbins=bins)
+                else:
+                    fig = px.histogram(df, x=x_col, nbins=bins)
+                st.plotly_chart(fig, use_container_width=True)
 
             elif chart_choice == "Boxplot (single numeric)" and numeric_cols:
                 y_col = st.selectbox("Numeric column", numeric_cols, key=f"{ds_key}_box_y")
@@ -275,14 +299,13 @@ with tab3:
                     group_col = st.selectbox("Group by (categorical)", [None]+cat_cols, key=f"{ds_key}_box_group")
                 chart_params.update({"y_col": y_col, "group_col": group_col})
 
-                if st.button("Show chart", key=f"{ds_key}_show_chart"):
-                    if group_col:
-                        fig = px.box(df, x=group_col, y=y_col)
-                    else:
-                        fig = px.box(df, y=y_col)
-                    st.plotly_chart(fig, use_container_width=True)
+                if group_col:
+                    fig = px.box(df, x=group_col, y=y_col)
+                else:
+                    fig = px.box(df, y=y_col)
+                st.plotly_chart(fig, use_container_width=True)
 
-            elif chart_choice == "Scatter (numeric X & Y)" and len(numeric_cols)>=2:
+            elif chart_choice == "Scatter (numeric X & Y)" and len(numeric_cols) >= 2:
                 x_col = st.selectbox("X axis", numeric_cols, key=f"{ds_key}_scatter_x")
                 y_col = st.selectbox("Y axis", [c for c in numeric_cols if c != x_col], key=f"{ds_key}_scatter_y")
                 color_col = None
@@ -290,23 +313,20 @@ with tab3:
                     color_col = st.selectbox("Color by (categorical)", [None]+cat_cols, key=f"{ds_key}_scatter_color")
                 chart_params.update({"x_col": x_col, "y_col": y_col, "color_col": color_col})
 
-                if st.button("Show chart", key=f"{ds_key}_show_chart"):
-                    if color_col:
-                        fig = px.scatter(df, x=x_col, y=y_col, color=df[color_col].astype(str))
-                    else:
-                        fig = px.scatter(df, x=x_col, y=y_col)
-                    st.plotly_chart(fig, use_container_width=True)
+                if color_col:
+                    fig = px.scatter(df, x=x_col, y=y_col, color=df[color_col].astype(str))
+                else:
+                    fig = px.scatter(df, x=x_col, y=y_col)
+                st.plotly_chart(fig, use_container_width=True)
 
-            elif chart_choice == "Correlation heatmap (numeric columns)" and len(numeric_cols)>=2:
-                if st.button("Show chart", key=f"{ds_key}_show_chart"):
-                    corr = df[numeric_cols].corr()
-                    fig = px.imshow(corr, text_auto=True)
-                    st.plotly_chart(fig, use_container_width=True)
+            elif chart_choice == "Correlation heatmap (numeric columns)" and len(numeric_cols) >= 2:
+                corr = df[numeric_cols].corr()
+                fig = px.imshow(corr, text_auto=True)
+                st.plotly_chart(fig, use_container_width=True)
 
-        # ------------------ RIGHT ------------------
+        # ------------------ RIGHT: PDF Queue ------------------
         with right_col:
             st.subheader("PDF Queue")
-            caption = st.text_input("Optional caption for PDF", key=f"{ds_key}_chart_caption")
 
             if st.button("Save chart to PDF", key=f"{ds_key}_save_chart"):
                 if fig is not None:
@@ -317,12 +337,12 @@ with tab3:
                         "params": chart_params,
                         "caption": caption,
                         "time": datetime.utcnow().isoformat(),
-                        "figure": fig  # <-- store the figure!
+                        "figure": fig  # <-- store the figure for Tab 5
                     }
                     st.session_state["saved_charts"].append(saved)
                     st.success("Chart saved to PDF queue")
                 else:
-                    st.warning("Please generate the chart first before saving.")
+                    st.warning("No chart available to save. Adjust parameters first.")
 # -----------------------------
 # Tab 4: Compare & Contrast
 # -----------------------------
