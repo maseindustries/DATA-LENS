@@ -506,71 +506,48 @@ with tab4:
 with tab5:
     st.header("Export Data & Summaries")
 
-    # --- Dataset A ---
+    # Dataset A
     cleaned_a = st.session_state.get("cleaned_a")
     name_a = st.session_state.get("cleaned_a_name", "Dataset A")
+    st.subheader(f"{name_a}")
     if isinstance(cleaned_a, pd.DataFrame):
-        st.subheader(f"{name_a} (Cleaned Dataset)")
         st.write(f"Shape: {cleaned_a.shape}")
         buf_csv = io.BytesIO()
         cleaned_a.to_csv(buf_csv, index=False)
         buf_csv.seek(0)
-        st.download_button(f"Download {name_a} as CSV", data=buf_csv, file_name=f"{name_a}.csv")
+        st.download_button(f"Download {name_a} CSV", data=buf_csv, file_name=f"{name_a}.csv")
     else:
-        st.info(f"{name_a} is not available. Upload & clean it in Tabs 1–2.")
+        st.info(f"{name_a} is not available. Upload & clean in Tabs 1–2.")
 
-    # --- Dataset B ---
+    # Dataset B
     cleaned_b = st.session_state.get("cleaned_b")
     name_b = st.session_state.get("cleaned_b_name", "Dataset B")
+    st.subheader(f"{name_b}")
     if isinstance(cleaned_b, pd.DataFrame):
-        st.subheader(f"{name_b} (Cleaned Dataset)")
         st.write(f"Shape: {cleaned_b.shape}")
         buf_csv = io.BytesIO()
         cleaned_b.to_csv(buf_csv, index=False)
         buf_csv.seek(0)
-        st.download_button(f"Download {name_b} as CSV", data=buf_csv, file_name=f"{name_b}.csv")
+        st.download_button(f"Download {name_b} CSV", data=buf_csv, file_name=f"{name_b}.csv")
     else:
-        st.info(f"{name_b} is not available. Upload & clean it in Tabs 1–2.")
+        st.info(f"{name_b} is not available. Upload & clean in Tabs 1–2.")
 
-    st.markdown("---")
-
-    # --- Column Summaries ---
+    # Column summaries
     st.subheader("Column Summaries")
     if isinstance(cleaned_a, pd.DataFrame):
-        summary_a = pd.DataFrame({
-            "column": cleaned_a.columns,
-            "dtype": [str(cleaned_a[c].dtype) for c in cleaned_a.columns],
-            "n_unique": [cleaned_a[c].nunique(dropna=True) for c in cleaned_a.columns],
-            "n_missing": [cleaned_a[c].isna().sum() for c in cleaned_a.columns]
-        })
-        buf = io.BytesIO()
-        summary_a.to_csv(buf, index=False)
-        buf.seek(0)
-        st.download_button(f"Download {name_a} column summary", data=buf, file_name=f"{name_a}_column_summary.csv")
+        st.write(f"{name_a} column summary is ready to download.")
     else:
-        st.info(f"No column summary available for {name_a}.")
+        st.info(f"{name_a} column summary not available.")
 
     if isinstance(cleaned_b, pd.DataFrame):
-        summary_b = pd.DataFrame({
-            "column": cleaned_b.columns,
-            "dtype": [str(cleaned_b[c].dtype) for c in cleaned_b.columns],
-            "n_unique": [cleaned_b[c].nunique(dropna=True) for c in cleaned_b.columns],
-            "n_missing": [cleaned_b[c].isna().sum() for c in cleaned_b.columns]
-        })
-        buf = io.BytesIO()
-        summary_b.to_csv(buf, index=False)
-        buf.seek(0)
-        st.download_button(f"Download {name_b} column summary", data=buf, file_name=f"{name_b}_column_summary.csv")
+        st.write(f"{name_b} column summary is ready to download.")
     else:
-        st.info(f"No column summary available for {name_b}.")
+        st.info(f"{name_b} column summary not available.")
 
-    st.markdown("---")
-
-    # --- Compare Report ---
+    # Compare report
     st.subheader("Compare & Contrast Report")
     compare_report = st.session_state.get("compare_report")
     if compare_report:
-        st.write(f"Comparing **{compare_report['name_a']}** and **{compare_report['name_b']}**")
-        st.info("Compare report download available when both datasets exist.")
+        st.write(f"Compare report ready for **{compare_report['name_a']}** vs **{compare_report['name_b']}**")
     else:
         st.info("No comparison report available. Complete Compare & Contrast in Tab 4 first.")
