@@ -506,85 +506,33 @@ with tab4:
 with tab5:
     st.header("Export Data & Summaries")
 
-    # --- Dataset A ---
+    # Dataset A
     cleaned_a = st.session_state.get("cleaned_a")
     name_a = st.session_state.get("cleaned_a_name", "Dataset A")
-
     st.subheader(f"{name_a}")
-    if isinstance(cleaned_a, pd.DataFrame):
-        st.write(f"Shape: {cleaned_a.shape[0]} rows x {cleaned_a.shape[1]} cols")
-        # Download cleaned dataset
-        buf_csv = io.BytesIO()
-        cleaned_a.to_csv(buf_csv, index=False)
-        buf_csv.seek(0)
-        st.download_button(f"Download {name_a} CSV", data=buf_csv, file_name=f"{name_a}.csv")
-        
-        # Column summary
-        st.write(f"{name_a} Column Summary:")
-        summary_a = pd.DataFrame({
-            "column": cleaned_a.columns,
-            "dtype": [str(cleaned_a[c].dtype) for c in cleaned_a.columns],
-            "n_unique": [cleaned_a[c].nunique(dropna=True) for c in cleaned_a.columns],
-            "n_missing": [cleaned_a[c].isna().sum() for c in cleaned_a.columns]
-        })
-        st.dataframe(summary_a)
-        buf_summary = io.BytesIO()
-        summary_a.to_csv(buf_summary, index=False)
-        buf_summary.seek(0)
-        st.download_button(f"Download {name_a} Column Summary CSV", data=buf_summary, file_name=f"{name_a}_column_summary.csv")
+    if cleaned_a is not None:
+        st.write(cleaned_a.head())
+        st.download_button(f"Download {name_a} CSV", data=cleaned_a.to_csv(index=False), file_name=f"{name_a}.csv")
     else:
         st.info(f"{name_a} is not available. Upload & clean it in Tabs 1–2.")
 
-    st.markdown("---")
-
-    # --- Dataset B ---
+    # Dataset B
     cleaned_b = st.session_state.get("cleaned_b")
     name_b = st.session_state.get("cleaned_b_name", "Dataset B")
-
     st.subheader(f"{name_b}")
-    if isinstance(cleaned_b, pd.DataFrame):
-        st.write(f"Shape: {cleaned_b.shape[0]} rows x {cleaned_b.shape[1]} cols")
-        # Download cleaned dataset
-        buf_csv = io.BytesIO()
-        cleaned_b.to_csv(buf_csv, index=False)
-        buf_csv.seek(0)
-        st.download_button(f"Download {name_b} CSV", data=buf_csv, file_name=f"{name_b}.csv")
-        
-        # Column summary
-        st.write(f"{name_b} Column Summary:")
-        summary_b = pd.DataFrame({
-            "column": cleaned_b.columns,
-            "dtype": [str(cleaned_b[c].dtype) for c in cleaned_b.columns],
-            "n_unique": [cleaned_b[c].nunique(dropna=True) for c in cleaned_b.columns],
-            "n_missing": [cleaned_b[c].isna().sum() for c in cleaned_b.columns]
-        })
-        st.dataframe(summary_b)
-        buf_summary = io.BytesIO()
-        summary_b.to_csv(buf_summary, index=False)
-        buf_summary.seek(0)
-        st.download_button(f"Download {name_b} Column Summary CSV", data=buf_summary, file_name=f"{name_b}_column_summary.csv")
+    if cleaned_b is not None:
+        st.write(cleaned_b.head())
+        st.download_button(f"Download {name_b} CSV", data=cleaned_b.to_csv(index=False), file_name=f"{name_b}.csv")
     else:
         st.info(f"{name_b} is not available. Upload & clean it in Tabs 1–2.")
 
-    st.markdown("---")
-
-    # --- Compare & Contrast ---
-    st.subheader("Compare & Contrast Report")
-    compare_report = st.session_state.get("compare_report")
-
-    if isinstance(cleaned_a, pd.DataFrame) and isinstance(cleaned_b, pd.DataFrame):
+    # Compare & Contrast
+    st.subheader("Compare & Contrast")
+    if cleaned_a is not None and cleaned_b is not None:
+        compare_report = st.session_state.get("compare_report")
         if compare_report:
-            st.write(f"Compare report ready for **{name_a}** vs **{name_b}**")
-            buf_excel = io.BytesIO()
-            with pd.ExcelWriter(buf_excel, engine="xlsxwriter") as writer:
-                # Add each dataset for comparison
-                cleaned_a.to_excel(writer, sheet_name=name_a[:28], index=False)
-                cleaned_b.to_excel(writer, sheet_name=name_b[:28], index=False)
-                # Optionally add compare_report details
-                pd.DataFrame([compare_report]).to_excel(writer, sheet_name="Compare_Report", index=False)
-            buf_excel.seek(0)
-            st.download_button("Download Compare Report (Excel)", data=buf_excel, file_name="compare_report.xlsx")
+            st.info("Compare report available to download.")
         else:
-            st.info("Complete Compare & Contrast in Tab 4 to generate the report.")
+            st.info("Run Compare & Contrast in Tab 4 to generate report.")
     else:
-        st.info("Both datasets are required for Compare & Contrast features. Upload and clean a second dataset in Tabs 1–2.")
+        st.info("Both datasets are required for Compare & Contrast features.")
