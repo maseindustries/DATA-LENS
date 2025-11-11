@@ -474,7 +474,7 @@ with tab4:
         else:
             st.info("Select at least one key column to perform row-level comparisons.")
     st.markdown("---")
- # -----------------------------
+# -----------------------------
 # Tab 5: PDF Summary Report
 # -----------------------------
 with tab5:
