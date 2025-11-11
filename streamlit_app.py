@@ -23,8 +23,8 @@ for key in [
 # -----------------------------
 # Tabs
 # -----------------------------
-tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
-    "Upload", "Cleaning", "EDA", "Compare & Contrast", "Export", "PDF Summary"
+tab1, tab2, tab3, tab4, tab5 = st.tabs([
+    "Upload", "Cleaning", "EDA", "Compare & Contrast", "PDF Summary"
 ])
 # -----------------------------
 # Tab 1: Upload
@@ -502,37 +502,4 @@ with tab4:
             "timestamp": datetime.utcnow().isoformat()
         }
         st.success("Compare completed and saved for export/PDF.")
-# ------------------ Tab 5 ------------------
-with tab5:
-    st.header("Export Data & Summaries")
 
-    # Dataset A
-    cleaned_a = st.session_state.get("cleaned_a")
-    name_a = st.session_state.get("cleaned_a_name", "Dataset A")
-    st.subheader(f"{name_a}")
-    if cleaned_a is not None:
-        st.write(cleaned_a.head())
-        st.download_button(f"Download {name_a} CSV", data=cleaned_a.to_csv(index=False), file_name=f"{name_a}.csv")
-    else:
-        st.info(f"{name_a} is not available. Upload & clean it in Tabs 1–2.")
-
-    # Dataset B
-    cleaned_b = st.session_state.get("cleaned_b")
-    name_b = st.session_state.get("cleaned_b_name", "Dataset B")
-    st.subheader(f"{name_b}")
-    if cleaned_b is not None:
-        st.write(cleaned_b.head())
-        st.download_button(f"Download {name_b} CSV", data=cleaned_b.to_csv(index=False), file_name=f"{name_b}.csv")
-    else:
-        st.info(f"{name_b} is not available. Upload & clean it in Tabs 1–2.")
-
-    # Compare & Contrast
-    st.subheader("Compare & Contrast")
-    if cleaned_a is not None and cleaned_b is not None:
-        compare_report = st.session_state.get("compare_report")
-        if compare_report:
-            st.info("Compare report available to download.")
-        else:
-            st.info("Run Compare & Contrast in Tab 4 to generate report.")
-    else:
-        st.info("Both datasets are required for Compare & Contrast features.")
