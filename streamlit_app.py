@@ -502,28 +502,43 @@ with tab4:
             "timestamp": datetime.utcnow().isoformat()
         }
         st.success("Compare completed and saved for export/PDF.")
-# -----------------------------
-# tab 5
+        # -----------------------------
+# Tab 5: PDF Summary with Visualizations
 # -----------------------------
 with tab5:
-    st.header("PDF Summary Report")
-    
-    # Get datasets and names
+    st.header("PDF Summary Report with Visualizations")
+
+    # Get datasets
     cleaned_a = st.session_state.get("cleaned_a")
     cleaned_b = st.session_state.get("cleaned_b")
     name_a = st.session_state.get("cleaned_a_name", "Dataset A")
     name_b = st.session_state.get("cleaned_b_name", "Dataset B")
-    
-    st.info("This PDF will include dataset summaries and comparison (if both datasets exist).")
-    
-    # Optional notes for executive summary
+
+    # Dataset status
+    st.subheader("Datasets Status")
+    st.success(f"{name_a} is {'ready' if cleaned_a is not None else 'not uploaded/cleaned'}")
+    st.info(f"{name_b} is {'ready' if cleaned_b is not None else 'not uploaded/cleaned'}")
+
+    if cleaned_a is None and cleaned_b is None:
+        st.warning("No datasets available. Please upload & clean datasets in Tabs 1–2.")
+        st.stop()
+
+    # Optional notes
     notes = st.text_area("Optional notes / observations for the report", value="")
-    
-    if st.button("Generate PDF Summary"):
+
+    # Graph options
+    graph_options = st.multiselect(
+        "Select graphs to include in PDF",
+        ["Numeric Histograms", "Categorical Bar Charts", "Correlation Heatmaps"],
+        default=[]
+    )
+
+    if st.button("Generate PDF Summary with Graphs"):
+        st.info("Generating PDF with visualizations...")
         pdf = FPDF()
         pdf.set_auto_page_break(auto=True, margin=15)
-        
-        # Title page / overview
+
+        # ----------------- Title Page -----------------
         pdf.add_page()
         pdf.set_font("Arial", "B", 16)
         pdf.cell(0, 10, "DataLens PDF Summary Report", ln=True, align="C")
@@ -532,10 +547,24 @@ with tab5:
         pdf.cell(0, 10, f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}", ln=True)
         pdf.cell(0, 10, f"Dataset A: {name_a}", ln=True)
         pdf.cell(0, 10, f"Dataset B: {name_b if cleaned_b is not None else 'Not uploaded'}", ln=True)
-        pdf.ln(10)
+        pdf.ln(5)
         if notes:
             pdf.multi_cell(0, 8, f"Notes: {notes}")
-        
+
+        import tempfile
+        import os
+
+        # ----------------- Helper: Add Graphs -----------------
+        def add_graph_to_pdf(fig, title):
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmpfile:
+                fig.write_image(tmpfile.name, scale=2)
+                pdf.add_page()
+                pdf.set_font("Arial", "B", 14)
+                pdf.cell(0, 10, title, ln=True)
+                pdf.image(tmpfile.name, x=10, y=25, w=pdf.w - 20)
+            os.unlink(tmpfile.name)
+
+        # ----------------- Helper: Dataset Summary -----------------
         def add_dataset_summary(df, dataset_name):
             pdf.add_page()
             pdf.set_font("Arial", "B", 14)
@@ -543,66 +572,77 @@ with tab5:
             pdf.set_font("Arial", "", 12)
             pdf.cell(0, 10, f"Shape: {df.shape[0]} rows x {df.shape[1]} columns", ln=True)
             pdf.ln(5)
-            
+
             # Numeric summary
             numeric_cols = df.select_dtypes(include=['number']).columns
-            if len(numeric_cols) > 0:
+            if numeric_cols.any():
                 pdf.cell(0, 10, "Numeric Columns Summary:", ln=True)
                 for col in numeric_cols:
-                    col_series = df[col]
-                    pdf.cell(0, 8, f"{col} | count: {col_series.count()}, mean: {col_series.mean():.2f}, "
-                                    f"median: {col_series.median():.2f}, min: {col_series.min():.2f}, "
-                                    f"max: {col_series.max():.2f}, missing: {col_series.isna().sum()}", ln=True)
+                    s = df[col]
+                    pdf.cell(
+                        0, 8,
+                        f"{col} | count: {s.count()}, mean: {s.mean():.2f}, median: {s.median():.2f}, "
+                        f"min: {s.min():.2f}, max: {s.max():.2f}, missing: {s.isna().sum()}",
+                        ln=True
+                    )
             else:
                 pdf.cell(0, 10, "No numeric columns.", ln=True)
-            pdf.ln(5)
-            
+
             # Categorical summary
             cat_cols = df.select_dtypes(include=['object']).columns
-            if len(cat_cols) > 0:
+            if cat_cols.any():
                 pdf.cell(0, 10, "Categorical Columns Summary:", ln=True)
                 for col in cat_cols:
-                    col_series = df[col]
-                    top_values = col_series.value_counts().head(3).to_dict()
-                    pdf.cell(0, 8, f"{col} | unique: {col_series.nunique()}, top: {top_values}, missing: {col_series.isna().sum()}", ln=True)
+                    s = df[col]
+                    top_vals = s.value_counts().head(3).to_dict()
+                    pdf.cell(
+                        0, 8,
+                        f"{col} | unique: {s.nunique()}, top: {top_vals}, missing: {s.isna().sum()}",
+                        ln=True
+                    )
             else:
                 pdf.cell(0, 10, "No categorical columns.", ln=True)
-        
-        # Add Dataset A summary
+
+            # Graphs
+            if "Numeric Histograms" in graph_options:
+                for col in numeric_cols:
+                    fig = px.histogram(df, x=col, title=f"{dataset_name}: {col} Histogram")
+                    add_graph_to_pdf(fig, f"{dataset_name}: {col} Histogram")
+            if "Categorical Bar Charts" in graph_options:
+                for col in cat_cols:
+                    counts = df[col].value_counts().reset_index()
+                    counts.columns = [col, "count"]
+                    fig = px.bar(counts, x=col, y="count", title=f"{dataset_name}: {col} Frequency")
+                    add_graph_to_pdf(fig, f"{dataset_name}: {col} Frequency")
+            if "Correlation Heatmaps" in graph_options and len(numeric_cols) > 1:
+                corr = df[numeric_cols].corr()
+                fig = px.imshow(corr, text_auto=True, title=f"{dataset_name}: Correlation Heatmap")
+                add_graph_to_pdf(fig, f"{dataset_name}: Correlation Heatmap")
+
+        # ----------------- Add Datasets -----------------
         if cleaned_a is not None:
             add_dataset_summary(cleaned_a, name_a)
-        
-        # Add Dataset B summary
         if cleaned_b is not None:
             add_dataset_summary(cleaned_b, name_b)
-        
-        # Compare & Contrast
+
+        # ----------------- Compare & Contrast -----------------
         if cleaned_a is not None and cleaned_b is not None:
             pdf.add_page()
             pdf.set_font("Arial", "B", 14)
             pdf.cell(0, 10, "Compare & Contrast Summary", ln=True)
-            pdf.set_font("Arial", "", 12)
-            
-            # Shared columns
             shared_cols = [c for c in cleaned_a.columns if c in cleaned_b.columns]
-            pdf.cell(0, 10, f"Shared Columns ({len(shared_cols)}): {', '.join(shared_cols)}", ln=True)
-            
-            # Unique columns
             unique_a = [c for c in cleaned_a.columns if c not in cleaned_b.columns]
             unique_b = [c for c in cleaned_b.columns if c not in cleaned_a.columns]
-            pdf.cell(0, 10, f"Unique to {name_a}: {', '.join(unique_a) if unique_a else 'None'}", ln=True)
-            pdf.cell(0, 10, f"Unique to {name_b}: {', '.join(unique_b) if unique_b else 'None'}", ln=True)
-            
-            # Basic numeric differences for shared columns
-            pdf.ln(5)
-            for col in shared_cols:
-                if pd.api.types.is_numeric_dtype(cleaned_a[col]) and pd.api.types.is_numeric_dtype(cleaned_b[col]):
-                    mean_a = cleaned_a[col].mean()
-                    mean_b = cleaned_b[col].mean()
-                    pdf.cell(0, 8, f"{col} | {name_a} mean: {mean_a:.2f}, {name_b} mean: {mean_b:.2f}, diff: {mean_b - mean_a:.2f}", ln=True)
-        
-        # Output PDF to buffer and provide download
-        pdf_buffer = io.BytesIO()
-        pdf.output(pdf_buffer)
-        pdf_buffer.seek(0)
-        st.download_button("Download PDF Summary", data=pdf_buffer, file_name="data_summary.pdf")
+            pdf.set_font("Arial", "", 12)
+            pdf.cell(0, 8, f"Shared Columns ({len(shared_cols)}): {', '.join(shared_cols)}", ln=True)
+            pdf.cell(0, 8, f"Unique to {name_a}: {', '.join(unique_a) if unique_a else 'None'}", ln=True)
+            pdf.cell(0, 8, f"Unique to {name_b}: {', '.join(unique_b) if unique_b else 'None'}", ln=True)
+
+        # ----------------- Output PDF -----------------
+        pdf_bytes = pdf.output(dest='S').encode('latin1')
+        pdf_buffer = io.BytesIO(pdf_bytes)
+        st.download_button(
+            "Download PDF with Graphs",
+            data=pdf_buffer,
+            file_name="data_summary_with_graphs.pdf"
+        )
