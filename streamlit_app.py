@@ -502,3 +502,88 @@ with tab4:
             "timestamp": datetime.utcnow().isoformat()
         }
         st.success("Compare completed and saved for export/PDF.")
+# ------------------ Tab 5 ------------------
+with tab5:
+    st.header("Export Data & Summaries")
+
+    # --- Export cleaned datasets ---
+    st.subheader("Cleaned Datasets")
+    for ds_key, ds_name in [
+        ("cleaned_a", st.session_state.get("cleaned_a_name", "Dataset A")),
+        ("cleaned_b", st.session_state.get("cleaned_b_name", "Dataset B"))
+    ]:
+        df = st.session_state.get(ds_key)
+        if isinstance(df, pd.DataFrame):
+            st.write(f"**{ds_name}** ({df.shape[0]} rows x {df.shape[1]} cols)")
+            buf_csv = io.BytesIO()
+            df.to_csv(buf_csv, index=False)
+            buf_csv.seek(0)
+            st.download_button(f"Download {ds_name} as CSV", data=buf_csv, file_name=f"{ds_name}.csv")
+            
+            buf_excel = io.BytesIO()
+            with pd.ExcelWriter(buf_excel, engine='xlsxwriter') as writer:
+                df.to_excel(writer, index=False, sheet_name=ds_name[:31])
+            buf_excel.seek(0)
+            st.download_button(f"Download {ds_name} as Excel", data=buf_excel, file_name=f"{ds_name}.xlsx")
+        else:
+            st.info(f"{ds_name} is not available for export.")
+
+    st.markdown("---")
+
+    # --- Export column summaries ---
+    st.subheader("Column Summaries")
+    for ds_key, ds_name in [
+        ("cleaned_a", st.session_state.get("cleaned_a_name", "Dataset A")),
+        ("cleaned_b", st.session_state.get("cleaned_b_name", "Dataset B"))
+    ]:
+        df = st.session_state.get(ds_key)
+        if isinstance(df, pd.DataFrame):
+            summary = []
+            for col in df.columns:
+                summary.append({
+                    "column": col,
+                    "dtype": str(df[col].dtype),
+                    "n_unique": int(df[col].nunique(dropna=True)),
+                    "n_missing": int(df[col].isna().sum())
+                })
+            summary_df = pd.DataFrame(summary)
+            buf = io.BytesIO()
+            summary_df.to_csv(buf, index=False)
+            buf.seek(0)
+            st.download_button(f"Download {ds_name} column summary", data=buf, file_name=f"{ds_name}_column_summary.csv")
+        else:
+            st.info(f"No column summary available for {ds_name}.")
+
+    st.markdown("---")
+
+    # --- Export comparison report ---
+    compare_report = st.session_state.get("compare_report")
+    st.subheader("Compare & Contrast Report")
+    if compare_report:
+        st.write(f"Comparing **{compare_report['name_a']}** and **{compare_report['name_b']}**")
+        
+        # Save comparison as Excel with multiple sheets
+        buf_excel = io.BytesIO()
+        with pd.ExcelWriter(buf_excel, engine='xlsxwriter') as writer:
+            # Only A
+            merged_only_a = st.session_state.get("cleaned_a")
+            merged_b = st.session_state.get("cleaned_b")
+            if merged_only_a is not None and merged_b is not None:
+                selected_keys = compare_report.get("selected_keys", [])
+                merged = merged_only_a.merge(merged_b, on=selected_keys, how="outer", indicator=True, suffixes=("_A","_B"))
+                only_a_df = merged[merged["_merge"]=="left_only"].drop(columns=["_merge"])
+                only_a_df.to_excel(writer, sheet_name=f"Only_in_{compare_report['name_a'][:28]}", index=False)
+                only_b_df = merged[merged["_merge"]=="right_only"].drop(columns=["_merge"])
+                only_b_df.to_excel(writer, sheet_name=f"Only_in_{compare_report['name_b'][:28]}", index=False)
+                both_df = merged[merged["_merge"]=="both"].drop(columns=["_merge"])
+                both_df.to_excel(writer, sheet_name="Matched_Both", index=False)
+            # Column differences summary
+            col_diff_df = pd.DataFrame({
+                f"Only in {compare_report['name_a']}": pd.Series(compare_report.get("only_cols_a", [])),
+                f"Only in {compare_report['name_b']}": pd.Series(compare_report.get("only_cols_b", []))
+            })
+            col_diff_df.to_excel(writer, sheet_name="Column_Differences", index=False)
+        buf_excel.seek(0)
+        st.download_button("Download Compare Report (Excel)", data=buf_excel, file_name="compare_report.xlsx")
+    else:
+        st.info("No comparison report available. Complete Compare & Contrast (Tab 4) first.")
