@@ -384,260 +384,121 @@ with tab3:
 with tab4:
     st.header("Compare & Contrast")
 
-    # Helper: validate dataset
-    def valid_df(key):
-        df = st.session_state.get(key)
-        return df is not None and isinstance(df, pd.DataFrame)
+    # Safety: get cleaned datasets
+    A = st.session_state.get("cleaned_a")
+    B = st.session_state.get("cleaned_b")
+    name_a = st.session_state.get("cleaned_a_name", "Dataset A")
+    name_b = st.session_state.get("cleaned_b_name", "Dataset B")
 
-    a_exists = valid_df("cleaned_a")
-    b_exists = valid_df("cleaned_b")
-
-    if not a_exists and not b_exists:
-        st.warning("No cleaned datasets available. Please upload & clean datasets in Tabs 1–2 first.")
+    # Only proceed if both datasets exist
+    if not isinstance(A, pd.DataFrame) or not isinstance(B, pd.DataFrame):
+        st.info("Please upload and clean a second dataset to use this feature.")
+        st.stop()  # Stop rendering further
     else:
-        st.write("Datasets available:", 
-                 f"Dataset A = {'yes' if a_exists else 'no'}", 
-                 f"Dataset B = {'yes' if b_exists else 'no'}")
+        st.write(f"**Datasets available:** {name_a} (A), {name_b} (B)")
 
-        df_a = st.session_state.get("cleaned_a") if a_exists else None
-        df_b = st.session_state.get("cleaned_b") if b_exists else None
+        # Matching keys
+        common_cols = list(set(A.columns).intersection(set(B.columns)))
+        st.write("Common columns detected:", common_cols or "(none)")
 
-        # Choose a primary comparison mode
-        mode = st.radio("Comparison mode", options=[
-            "Columns & Schema", 
-            "Row-level differences (left/right)", 
-            "Common columns value-count diffs", 
-            "Numeric columns stats comparison",
-            "Generate full comparison report"
-        ])
+        auto_key = None
+        for cand in ["id", "ID", "Id", "key", "Key", "email", "Email"]:
+            if cand in common_cols:
+                auto_key = cand
+                break
 
-        # ---------- Columns & Schema ----------
-        if mode == "Columns & Schema":
-            st.subheader("Columns & Schema comparison")
-            cols_a = set(df_a.columns) if df_a is not None else set()
-            cols_b = set(df_b.columns) if df_b is not None else set()
+        use_auto = False
+        if auto_key:
+            use_auto = st.checkbox(f"Auto-select '{auto_key}' as join key", value=True)
 
-            st.write(f"Columns in A: {len(cols_a)}; Columns in B: {len(cols_b)}")
-            only_a = sorted(list(cols_a - cols_b))
-            only_b = sorted(list(cols_b - cols_a))
-            common = sorted(list(cols_a & cols_b))
+        selected_keys = st.multiselect("Select key column(s) to match rows", options=common_cols,
+                                       default=[auto_key] if (auto_key and use_auto) else (common_cols[:1] if common_cols else []))
+        if not selected_keys:
+            st.warning("Select at least one key column to perform row-level comparisons.")
+            st.stop()
 
-            st.markdown("**Columns only in A**")
-            st.write(only_a or "None")
-            st.markdown("**Columns only in B**")
-            st.write(only_b or "None")
-            st.markdown("**Common columns**")
-            st.write(common or "None")
+        dupA = A.duplicated(subset=selected_keys, keep=False).sum()
+        dupB = B.duplicated(subset=selected_keys, keep=False).sum()
+        st.write(f"Key duplicates: {name_a}: {dupA}/{A.shape[0]}, {name_b}: {dupB}/{B.shape[0]}")
 
-            # show dtypes for common columns if present
-            if common:
-                st.subheader("Data types for common columns")
-                dtypes = []
-                for c in common:
-                    dtype_a = str(df_a[c].dtype) if df_a is not None else "N/A"
-                    dtype_b = str(df_b[c].dtype) if df_b is not None else "N/A"
-                    dtypes.append({"column": c, "dtype_a": dtype_a, "dtype_b": dtype_b})
-                st.dataframe(pd.DataFrame(dtypes))
+        # Merge and compare
+        merged = A.merge(B, on=selected_keys, how="outer", indicator=True, suffixes=("_A", "_B"))
+        only_a = merged[merged["_merge"] == "left_only"].drop(columns=["_merge"])
+        only_b = merged[merged["_merge"] == "right_only"].drop(columns=["_merge"])
+        both = merged[merged["_merge"] == "both"].drop(columns=["_merge"])
 
-        # ---------- Row-level differences ----------
-        elif mode == "Row-level differences (left/right)":
-            st.subheader("Row-level differences")
-            # require at least one dataset
-            if df_a is None:
-                st.info("Dataset A missing — show rows only in B")
-            if df_b is None:
-                st.info("Dataset B missing — show rows only in A")
+        # Summary metrics
+        st.markdown("### Summary")
+        c1, c2, c3 = st.columns(3)
+        c1.metric(f"Only in {name_a}", f"{only_a.shape[0]:,}")
+        c2.metric(f"Only in {name_b}", f"{only_b.shape[0]:,}")
+        c3.metric("Matched (both)", f"{both.shape[0]:,}")
 
-            # Ask for key columns to compare rows by (if not provided, compare full rows)
-            st.write("Choose key columns to determine row identity (if none chosen, full-row equality is used).")
-            possible_keys = list(set(df_a.columns if df_a is not None else []) | set(df_b.columns if df_b is not None else []))
-            key_cols = st.multiselect("Key columns (order matters)", options=possible_keys)
-
-            def rows_only(left, right, keys):
-                # left rows not present in right
-                if keys:
-                    # merge on keys to identify matches
-                    merged = left.merge(right[keys].drop_duplicates(), on=keys, how="left", indicator=True)
-                    only = merged[merged["_merge"] == "left_only"].drop(columns=["_merge"])
-                    return only
-                else:
-                    # compare full rows by hashing
-                    left_hash = left.apply(lambda row: hash(tuple(row.values)), axis=1)
-                    right_hashes = set(right.apply(lambda r: hash(tuple(r.values)), axis=1))
-                    mask = left_hash.apply(lambda h: h not in right_hashes)
-                    return left[mask]
-
-            if df_a is not None and df_b is not None:
-                only_a = rows_only(df_a, df_b, key_cols)
-                only_b = rows_only(df_b, df_a, key_cols)
-
-                st.markdown(f"Rows only in A: {only_a.shape[0]}")
-                st.dataframe(only_a.head(50))
-                st.markdown(f"Rows only in B: {only_b.shape[0]}")
-                st.dataframe(only_b.head(50))
-
-                # Download buttons
-                buf_a = io.BytesIO()
-                only_a.to_csv(buf_a, index=False)
-                buf_a.seek(0)
-                st.download_button("Download rows only in A (CSV)", data=buf_a, file_name="only_in_A.csv")
-
-                buf_b = io.BytesIO()
-                only_b.to_csv(buf_b, index=False)
-                buf_b.seek(0)
-                st.download_button("Download rows only in B (CSV)", data=buf_b, file_name="only_in_B.csv")
-            else:
-                # If only one exists, show that dataset
-                only = df_a if df_b is None else df_b
-                st.markdown(f"Rows in the available dataset: {only.shape[0]}")
-                st.dataframe(only.head(100))
-                buf = io.BytesIO()
-                only.to_csv(buf, index=False)
-                buf.seek(0)
-                st.download_button("Download dataset (CSV)", data=buf, file_name="dataset_only.csv")
-
-        # ---------- Common columns value-count diffs ----------
-        elif mode == "Common columns value-count diffs":
-            st.subheader("Value-count diffs for common categorical columns")
-            if df_a is None or df_b is None:
-                st.info("Both datasets required for this mode.")
-            else:
-                common = list(set(df_a.columns) & set(df_b.columns))
-                if not common:
-                    st.info("No common columns to compare.")
-                else:
-                    cat_common = [c for c in common if df_a[c].dtype == "object" or df_b[c].dtype == "object"]
-                    if not cat_common:
-                        st.info("No common categorical columns detected. You can still compare numeric stats in another mode.")
-                    else:
-                        col_choice = st.selectbox("Choose a common categorical column", options=sorted(cat_common))
-                        vc_a = df_a[col_choice].fillna("<NA>").value_counts().rename("count_a")
-                        vc_b = df_b[col_choice].fillna("<NA>").value_counts().rename("count_b")
-                        vc = pd.concat([vc_a, vc_b], axis=1).fillna(0).astype(int)
-                        vc["diff_a_minus_b"] = vc["count_a"] - vc["count_b"]
-                        st.dataframe(vc.sort_values("diff_a_minus_b", ascending=False))
-
-                        # Download option
-                        buf = io.BytesIO()
-                        vc.to_csv(buf)
-                        buf.seek(0)
-                        st.download_button("Download value-count diff (CSV)", data=buf, file_name=f"value_count_diff_{col_choice}.csv")
-
-        # ---------- Numeric columns stats comparison ----------
-        elif mode == "Numeric columns stats comparison":
-            st.subheader("Numeric stats comparison for shared numeric columns")
-            if df_a is None or df_b is None:
-                st.info("Both datasets required for numeric stats comparison.")
-            else:
-                num_common = [c for c in set(df_a.columns) & set(df_b.columns)
-                              if pd.api.types.is_numeric_dtype(df_a[c]) and pd.api.types.is_numeric_dtype(df_b[c])]
-                if not num_common:
-                    st.info("No shared numeric columns detected.")
-                else:
-                    sel = st.multiselect("Numeric columns to compare", options=sorted(num_common), default=num_common[:5])
-                    stats = []
-                    for c in sel:
-                        a = df_a[c].dropna()
-                        b = df_b[c].dropna()
-                        stats.append({
-                            "column": c,
-                            "a_count": int(a.count()),
-                            "b_count": int(b.count()),
-                            "a_mean": float(a.mean()) if not a.empty else None,
-                            "b_mean": float(b.mean()) if not b.empty else None,
-                            "a_std": float(a.std()) if not a.empty else None,
-                            "b_std": float(b.std()) if not b.empty else None,
-                            "mean_diff": (float(a.mean()) - float(b.mean())) if (not a.empty and not b.empty) else None
-                        })
-                    stat_df = pd.DataFrame(stats)
-                    st.dataframe(stat_df)
-
-                    # Download stats CSV
+        # Expanders with previews and export
+        for label, df_part, fname in [
+            (f"Rows only in {name_a}", only_a, f"only_in_{name_a}.csv"),
+            (f"Rows only in {name_b}", only_b, f"only_in_{name_b}.csv"),
+            ("Rows in both", both, "matched_rows.csv")
+        ]:
+            with st.expander(f"Preview: {label} ({df_part.shape[0]})", expanded=False):
+                if not df_part.empty:
+                    st.dataframe(df_part.head(200))
                     buf = io.BytesIO()
-                    stat_df.to_csv(buf, index=False)
+                    df_part.to_csv(buf, index=False)
                     buf.seek(0)
-                    st.download_button("Download numeric stats CSV", data=buf, file_name="numeric_stats_comparison.csv")
+                    st.download_button(f"Download {fname}", data=buf, file_name=fname)
+                else:
+                    st.info(f"No rows for {label}.")
 
-        # ---------- Generate full comparison report ----------
-        elif mode == "Generate full comparison report":
-            st.subheader("Full comparison report")
-            # Build a report dict of results for export & later tabs
-            report = {}
-            cols_a = set(df_a.columns) if df_a is not None else set()
-            cols_b = set(df_b.columns) if df_b is not None else set()
-            report["only_in_a_columns"] = sorted(list(cols_a - cols_b))
-            report["only_in_b_columns"] = sorted(list(cols_b - cols_a))
-            report["common_columns"] = sorted(list(cols_a & cols_b))
+        # Column comparison
+        st.markdown("### Column presence comparison")
+        cols_a = set(A.columns)
+        cols_b = set(B.columns)
+        only_cols_a = sorted(list(cols_a - cols_b))
+        only_cols_b = sorted(list(cols_b - cols_a))
+        common = sorted(list(cols_a & cols_b))
+        c1, c2 = st.columns(2)
+        with c1:
+            st.subheader(f"Columns only in {name_a} ({len(only_cols_a)})")
+            st.write(only_cols_a or "None")
+        with c2:
+            st.subheader(f"Columns only in {name_b} ({len(only_cols_b)})")
+            st.write(only_cols_b or "None")
 
-            # Row diffs (full-row based)
-            if df_a is not None and df_b is not None:
-                # rows only in A
-                only_a = df_a.merge(df_b.drop_duplicates(), how="left", indicator=True)
-                only_a = only_a[only_a["_merge"] == "left_only"].drop(columns=["_merge"])
-                only_b = df_b.merge(df_a.drop_duplicates(), how="left", indicator=True)
-                only_b = only_b[only_b["_merge"] == "left_only"].drop(columns=["_merge"])
-                report["only_in_a_rows"] = only_a
-                report["only_in_b_rows"] = only_b
-            else:
-                report["only_in_a_rows"] = df_a if df_b is None else pd.DataFrame()
-                report["only_in_b_rows"] = df_b if df_a is None else pd.DataFrame()
-
-            # numeric comparison summary for common numeric columns
-            if df_a is not None and df_b is not None:
-                num_common = [c for c in report["common_columns"]
-                              if pd.api.types.is_numeric_dtype(df_a[c]) and pd.api.types.is_numeric_dtype(df_b[c])]
-                num_stats = []
-                for c in num_common:
-                    a = df_a[c].dropna()
-                    b = df_b[c].dropna()
-                    num_stats.append({
-                        "column": c,
-                        "a_count": int(a.count()),
-                        "b_count": int(b.count()),
-                        "a_mean": float(a.mean()) if not a.empty else None,
-                        "b_mean": float(b.mean()) if not b.empty else None,
-                        "mean_diff": (float(a.mean()) - float(b.mean())) if (not a.empty and not b.empty) else None
+        # Numeric differences
+        st.markdown("### Numeric differences for common numeric columns")
+        numeric_common = [c for c in common if pd.api.types.is_numeric_dtype(A[c]) and pd.api.types.is_numeric_dtype(B[c])]
+        if numeric_common:
+            stats = []
+            for col in numeric_common:
+                a_series = A.set_index(selected_keys)[col] if selected_keys else A[col]
+                b_series = B.set_index(selected_keys)[col] if selected_keys else B[col]
+                joined = a_series.to_frame("A").join(b_series.to_frame("B"), how="inner").dropna()
+                if not joined.empty:
+                    diff = joined["A"] - joined["B"]
+                    stats.append({
+                        "column": col,
+                        "n_compared": int(joined.shape[0]),
+                        "mean_diff": float(diff.mean()),
+                        "median_diff": float(diff.median()),
+                        "std_diff": float(diff.std())
                     })
-                report["numeric_stats"] = pd.DataFrame(num_stats)
+            if stats:
+                st.dataframe(pd.DataFrame(stats).set_index("column"))
             else:
-                report["numeric_stats"] = pd.DataFrame()
+                st.info("No overlapping numeric values to compare.")
+        else:
+            st.info("No numeric columns in common.")
 
-            # Save to session state for later exports
-            st.session_state["compare_report"] = report
-            st.success("Comparison report generated and saved to session_state['compare_report'].")
-
-            # Show quick previews
-            st.markdown("**Columns only in A**")
-            st.write(report["only_in_a_columns"])
-            st.markdown("**Columns only in B**")
-            st.write(report["only_in_b_columns"])
-            st.markdown("**Numeric stats preview**")
-            st.dataframe(report["numeric_stats"].head())
-
-            # Export: bundle into an Excel workbook
-            if st.button("Export full report to Excel"):
-                out = io.BytesIO()
-                with pd.ExcelWriter(out, engine="openpyxl") as writer:
-                    pd.DataFrame({"only_in_a_columns": report["only_in_a_columns"]}).to_excel(writer, sheet_name="only_in_A_cols", index=False)
-                    pd.DataFrame({"only_in_b_columns": report["only_in_b_columns"]}).to_excel(writer, sheet_name="only_in_B_cols", index=False)
-                    report["numeric_stats"].to_excel(writer, sheet_name="numeric_stats", index=False)
-                    # put row diffs if present
-                    if not report["only_in_a_rows"].empty:
-                        report["only_in_a_rows"].to_excel(writer, sheet_name="only_in_A_rows", index=False)
-                    if not report["only_in_b_rows"].empty:
-                        report["only_in_b_rows"].to_excel(writer, sheet_name="only_in_B_rows", index=False)
-                out.seek(0)
-                st.download_button("Download full report (Excel)", data=out, file_name="comparison_report.xlsx")
-
-            # Also allow CSVs for row diffs if they exist
-            if "only_in_a_rows" in report and not report["only_in_a_rows"].empty:
-                buf = io.BytesIO()
-                report["only_in_a_rows"].to_csv(buf, index=False)
-                buf.seek(0)
-                st.download_button("Download rows only in A (CSV)", data=buf, file_name="only_in_A_rows.csv")
-            if "only_in_b_rows" in report and not report["only_in_b_rows"].empty:
-                buf = io.BytesIO()
-                report["only_in_b_rows"].to_csv(buf, index=False)
-                buf.seek(0)
-                st.download_button("Download rows only in B (CSV)", data=buf, file_name="only_in_B_rows.csv")
-
+        # Save report for PDF/export
+        st.session_state["compare_report"] = {
+            "name_a": name_a,
+            "name_b": name_b,
+            "selected_keys": selected_keys,
+            "counts": {"only_a": only_a.shape[0], "only_b": only_b.shape[0], "both": both.shape[0]},
+            "only_cols_a": only_cols_a,
+            "only_cols_b": only_cols_b,
+            "numeric_comparison": numeric_common,
+            "timestamp": datetime.utcnow().isoformat()
+        }
+        st.success("Compare completed and saved for export/PDF.")
