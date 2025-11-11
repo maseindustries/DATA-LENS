@@ -363,6 +363,7 @@ with tab4:
     name_a = st.session_state.get("cleaned_a_name", "Dataset A")
     name_b = st.session_state.get("cleaned_b_name", "Dataset B")
 
+    # Basic availability info
     if A is None:
         st.info("Dataset A is not available. Please upload and clean it in Tabs 1–2.")
     if B is None:
@@ -370,64 +371,122 @@ with tab4:
 
     st.markdown("---")
 
+    # Only compare if both datasets exist
     if isinstance(A, pd.DataFrame) and isinstance(B, pd.DataFrame):
         st.write(f"**Datasets available:** {name_a} (A), {name_b} (B)")
 
-        # Detect common columns for matching
-        common_cols = list(set(A.columns).intersection(B.columns))
+        # Detect common columns
+        common_cols = list(set(A.columns).intersection(set(B.columns)))
         st.write("Common columns detected:", common_cols or "(none)")
 
-        # Auto-key detection
+        # Auto-select key if obvious
         auto_key = next((k for k in ["id","ID","Id","key","Key","email","Email"] if k in common_cols), None)
         use_auto = st.checkbox(f"Auto-select '{auto_key}' as join key", value=True) if auto_key else False
+
         selected_keys = st.multiselect(
             "Select key column(s) to match rows",
             options=common_cols,
             default=[auto_key] if (auto_key and use_auto) else (common_cols[:1] if common_cols else [])
         )
 
-        if selected_keys:
-            # Row-level merge for numeric comparisons
-            numeric_common = [c for c in common_cols if pd.api.types.is_numeric_dtype(A[c]) and pd.api.types.is_numeric_dtype(B[c])]
-            cat_common = [c for c in common_cols if pd.api.types.is_object_dtype(A[c]) and pd.api.types.is_object_dtype(B[c])]
+        if not selected_keys:
+            st.info("Select at least one key column to perform row-level comparisons.")
+            st.stop()
 
-            # ---------------- Numeric comparison ----------------
-            if numeric_common:
-                st.subheader("Numeric Column Differences")
-                chosen_num = st.selectbox("Pick numeric column to compare", options=numeric_common)
-                
-                # Safe merge
-                a_vals = A[selected_keys + [chosen_num]]
-                b_vals = B[selected_keys + [chosen_num]]
-                joined = pd.merge(
-                    a_vals, b_vals,
-                    on=selected_keys,
-                    how="inner",
-                    suffixes=(f"_{name_a}", f"_{name_b}")
+        # ------------------ Row-level comparison ------------------
+        dupA = A.duplicated(subset=selected_keys, keep=False).sum()
+        dupB = B.duplicated(subset=selected_keys, keep=False).sum()
+        st.write(f"Key duplicates: {name_a}: {dupA}/{A.shape[0]}, {name_b}: {dupB}/{B.shape[0]}")
+
+        merged = A.merge(B, on=selected_keys, how="outer", indicator=True, suffixes=("_A", "_B"))
+        only_a = merged[merged["_merge"] == "left_only"].drop(columns=["_merge"])
+        only_b = merged[merged["_merge"] == "right_only"].drop(columns=["_merge"])
+        both = merged[merged["_merge"] == "both"].drop(columns=["_merge"])
+
+        # Summary metrics
+        st.markdown("### Summary Metrics")
+        c1, c2, c3 = st.columns(3)
+        c1.metric(f"Only in {name_a}", f"{only_a.shape[0]:,}")
+        c2.metric(f"Only in {name_b}", f"{only_b.shape[0]:,}")
+        c3.metric("Matched (both)", f"{both.shape[0]:,}")
+
+        st.markdown("---")
+
+        # ------------------ Column comparison ------------------
+        cols_a = set(A.columns)
+        cols_b = set(B.columns)
+        only_cols_a = sorted(list(cols_a - cols_b))
+        only_cols_b = sorted(list(cols_b - cols_a))
+        common = sorted(list(cols_a & cols_b))
+
+        c1, c2 = st.columns(2)
+        with c1:
+            st.subheader(f"Columns only in {name_a} ({len(only_cols_a)})")
+            st.write(only_cols_a or "None")
+        with c2:
+            st.subheader(f"Columns only in {name_b} ({len(only_cols_b)})")
+            st.write(only_cols_b or "None")
+
+        st.markdown("---")
+
+        # ------------------ Numeric differences ------------------
+        numeric_common = [c for c in common if pd.api.types.is_numeric_dtype(A[c]) and pd.api.types.is_numeric_dtype(B[c])]
+        if numeric_common:
+            with st.expander("Numeric Differences", expanded=True):
+                chosen_num = st.selectbox(
+                    "Select numeric column to compare",
+                    options=numeric_common,
+                    key="num_diff_select"
                 )
-                joined["diff"] = joined[f"{chosen_num}_{name_b}"] - joined[f"{chosen_num}_{name_a}"]
-                st.dataframe(joined.head(200))
-
-            # ---------------- Categorical comparison ----------------
-            if cat_common:
-                st.subheader("Categorical Column Differences")
-                chosen_cat = st.selectbox("Pick categorical column to compare", options=cat_common)
-
-                a_vals = A[selected_keys + [chosen_cat]]
-                b_vals = B[selected_keys + [chosen_cat]]
-                joined_cat = pd.merge(
-                    a_vals, b_vals,
-                    on=selected_keys,
-                    how="outer",
-                    suffixes=(f"_{name_a}", f"_{name_b}")
-                )
-
-                # Show value differences
-                joined_cat["match"] = joined_cat[f"{chosen_cat}_{name_a}"] == joined_cat[f"{chosen_cat}_{name_b}"]
-                st.dataframe(joined_cat.head(200))
-
-            st.success("Comparison complete!")
+                if chosen_num:
+                    a_grouped = A.groupby(selected_keys)[chosen_num].mean().reset_index()
+                    b_grouped = B.groupby(selected_keys)[chosen_num].mean().reset_index()
+                    joined_num = pd.merge(
+                        a_grouped, b_grouped,
+                        on=selected_keys,
+                        how="inner",
+                        suffixes=(f"_{name_a}", f"_{name_b}")
+                    )
+                    joined_num["diff"] = joined_num[f"{chosen_num}_{name_b}"] - joined_num[f"{chosen_num}_{name_a}"]
+                    st.write(f"Rows compared for '{chosen_num}': {joined_num.shape[0]}")
+                    st.dataframe(joined_num)
         else:
-            st.info("Select at least one key column to perform comparisons.")
+            st.info("No common numeric columns to compare.")
 
-    st.markdown("---")
+        st.markdown("---")
+
+        # ------------------ Categorical differences ------------------
+        cat_common = [c for c in common if pd.api.types.is_object_dtype(A[c]) and pd.api.types.is_object_dtype(B[c])]
+        if cat_common:
+            with st.expander("Categorical Differences", expanded=False):
+                chosen_cat = st.selectbox(
+                    "Select categorical column to compare",
+                    options=cat_common,
+                    key="cat_diff_select"
+                )
+                if chosen_cat:
+                    a_vals = A.groupby(selected_keys)[chosen_cat].agg(lambda x: x.mode().iloc[0] if not x.mode().empty else np.nan).reset_index()
+                    b_vals = B.groupby(selected_keys)[chosen_cat].agg(lambda x: x.mode().iloc[0] if not x.mode().empty else np.nan).reset_index()
+                    joined_cat = pd.merge(
+                        a_vals, b_vals,
+                        on=selected_keys,
+                        how="inner",
+                        suffixes=(f"_{name_a}", f"_{name_b}")
+                    )
+                    joined_cat["match"] = joined_cat[f"{chosen_cat}_{name_a}"] == joined_cat[f"{chosen_cat}_{name_b}"]
+                    st.dataframe(joined_cat)
+
+        # ------------------ Save report ------------------
+        st.session_state["compare_report"] = {
+            "name_a": name_a,
+            "name_b": name_b,
+            "selected_keys": selected_keys,
+            "counts": {"only_a": only_a.shape[0], "only_b": only_b.shape[0], "both": both.shape[0]},
+            "only_cols_a": only_cols_a,
+            "only_cols_b": only_cols_b,
+            "numeric_common": numeric_common,
+            "categorical_common": cat_common,
+            "timestamp": datetime.utcnow().isoformat()
+        }
+        st.success("Compare completed and saved for export/report.")
+
