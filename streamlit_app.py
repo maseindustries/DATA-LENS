@@ -208,14 +208,15 @@ with tab2:
     # -----------------------------
         # tab 3
     # -----------------------------
+# -----------------------------
+# Tab 3: Exploratory Data Analysis (EDA)
+# -----------------------------
 with tab3:
     st.title("Exploratory Data Analysis (EDA)")
 
-    # Ensure saved_charts exists
     if "saved_charts" not in st.session_state:
         st.session_state["saved_charts"] = []
 
-    # Datasets and friendly names
     datasets = [
         ("cleaned_a", st.session_state.get("cleaned_a_name", "Dataset A")),
         ("cleaned_b", st.session_state.get("cleaned_b_name", "Dataset B"))
@@ -225,63 +226,19 @@ with tab3:
     if not available:
         st.warning("Please upload & clean at least one dataset in Tabs 1–2 before running EDA.")
     else:
-        # Column layout: left = overview, center = chart, right = queue
-        left_col, center_col, right_col = st.columns([2, 3, 1])
+        left_col, center_col, right_col = st.columns([2,3,1])
 
-        # ------------------ LEFT: Dataset overview ------------------
+        # ------------------ LEFT ------------------
         with left_col:
             st.subheader("Dataset selection & overview")
-            display_names = [name for _, name in available]
-            chosen_name = st.selectbox("Choose dataset", options=display_names, key="eda_choose_ds")
+            chosen_name = st.selectbox("Choose dataset", [name for _, name in available], key="eda_choose_ds")
             ds_key = next(key for key, name in available if name == chosen_name)
             df = st.session_state.get(ds_key)
 
-            if df is None:
-                st.error("Dataset not available. Please return to Cleaning (Tab 2).")
-            else:
-                st.markdown(f"**{chosen_name}** — rows × cols: **{df.shape[0]} × {df.shape[1]}**")
-                st.write("Columns:", list(df.columns))
+            numeric_cols = df.select_dtypes(include=["number"]).columns.tolist()
+            cat_cols = df.select_dtypes(include=["object", "category"]).columns.tolist()
 
-                numeric_cols = df.select_dtypes(include=["number"]).columns.tolist()
-                cat_cols = df.select_dtypes(include=["object", "category"]).columns.tolist()
-
-                # Expanders for summaries
-                with st.expander("Missing values"):
-                    missing = df.isna().sum()
-                    if missing.sum() > 0:
-                        st.dataframe(missing[missing > 0].sort_values(ascending=False))
-                    else:
-                        st.info("No missing values.")
-
-                with st.expander("Numeric summary"):
-                    if numeric_cols:
-                        st.dataframe(df[numeric_cols].describe().T)
-                    else:
-                        st.info("No numeric columns.")
-
-                with st.expander("Categorical summary"):
-                    if cat_cols:
-                        sel_cat = st.selectbox("Pick a categorical column", options=cat_cols, key=f"{ds_key}_cat")
-                        vc = df[sel_cat].value_counts(dropna=False)
-                        st.dataframe(vc)
-                    else:
-                        st.info("No categorical columns.")
-
-                with st.expander("Row / Column Inspector"):
-                    col_to_view = st.selectbox("Pick a column to inspect", options=df.columns, key=f"{ds_key}_inspect_col")
-                    st.dataframe(df[[col_to_view]].head(10))
-
-                if st.button("Download column summary CSV", key=f"{ds_key}_download_summary"):
-                    summary = [{"column": c, "dtype": str(df[c].dtype),
-                                "n_unique": int(df[c].nunique(dropna=True)),
-                                "n_missing": int(df[c].isna().sum())} for c in df.columns]
-                    summary_df = pd.DataFrame(summary)
-                    buffer = io.BytesIO()
-                    summary_df.to_csv(buffer, index=False)
-                    buffer.seek(0)
-                    st.download_button("Download CSV", data=buffer, file_name=f"{ds_key}_summary.csv")
-
-        # ------------------ CENTER: Charts ------------------
+        # ------------------ CENTER ------------------
         with center_col:
             st.subheader("Charts")
             chart_options = [
@@ -293,93 +250,79 @@ with tab3:
             ]
             chart_choice = st.selectbox("Choose chart", options=chart_options, key=f"{ds_key}_chart_choice")
             chart_params = {}
+            fig = None
 
-            # Chart-specific controls
             if chart_choice == "Histogram (single numeric)" and numeric_cols:
-                x_col = st.selectbox("Numeric column", options=numeric_cols, key=f"{ds_key}_hist_x")
+                x_col = st.selectbox("Numeric column", numeric_cols, key=f"{ds_key}_hist_x")
                 bins = st.number_input("Bins", min_value=5, max_value=500, value=30, step=1, key=f"{ds_key}_hist_bins")
                 color_col = None
                 if cat_cols:
-                    color_col = st.selectbox("Color by (categorical)", options=[None]+cat_cols, key=f"{ds_key}_hist_color")
+                    color_col = st.selectbox("Color by (categorical)", [None]+cat_cols, key=f"{ds_key}_hist_color")
                 chart_params.update({"x_col": x_col, "bins": bins, "color_col": color_col})
 
+                # Render figure
+                if st.button("Show chart", key=f"{ds_key}_show_chart"):
+                    if color_col:
+                        fig = px.histogram(df, x=x_col, color=color_col, nbins=bins)
+                    else:
+                        fig = px.histogram(df, x=x_col, nbins=bins)
+                    st.plotly_chart(fig, use_container_width=True)
+
             elif chart_choice == "Boxplot (single numeric)" and numeric_cols:
-                y_col = st.selectbox("Numeric column", options=numeric_cols, key=f"{ds_key}_box_y")
+                y_col = st.selectbox("Numeric column", numeric_cols, key=f"{ds_key}_box_y")
                 group_col = None
                 if cat_cols:
-                    group_col = st.selectbox("Group by (categorical)", options=[None]+cat_cols, key=f"{ds_key}_box_group")
+                    group_col = st.selectbox("Group by (categorical)", [None]+cat_cols, key=f"{ds_key}_box_group")
                 chart_params.update({"y_col": y_col, "group_col": group_col})
 
+                if st.button("Show chart", key=f"{ds_key}_show_chart"):
+                    if group_col:
+                        fig = px.box(df, x=group_col, y=y_col)
+                    else:
+                        fig = px.box(df, y=y_col)
+                    st.plotly_chart(fig, use_container_width=True)
+
             elif chart_choice == "Scatter (numeric X & Y)" and len(numeric_cols)>=2:
-                x_col = st.selectbox("X axis", options=numeric_cols, key=f"{ds_key}_scatter_x")
-                y_col = st.selectbox("Y axis", options=[c for c in numeric_cols if c != x_col], key=f"{ds_key}_scatter_y")
+                x_col = st.selectbox("X axis", numeric_cols, key=f"{ds_key}_scatter_x")
+                y_col = st.selectbox("Y axis", [c for c in numeric_cols if c != x_col], key=f"{ds_key}_scatter_y")
                 color_col = None
                 if cat_cols:
-                    color_col = st.selectbox("Color by (categorical)", options=[None]+cat_cols, key=f"{ds_key}_scatter_color")
+                    color_col = st.selectbox("Color by (categorical)", [None]+cat_cols, key=f"{ds_key}_scatter_color")
                 chart_params.update({"x_col": x_col, "y_col": y_col, "color_col": color_col})
 
-            elif chart_choice == "Correlation heatmap (numeric columns)" and len(numeric_cols)>=2:
-                chart_params.update({})
-
-            # Show chart & save to PDF queue
-            st.write("")
-            col_show, col_save = st.columns([1,1])
-            caption = st.text_input("Optional caption for PDF", key=f"{ds_key}_chart_caption")
-            with col_show:
                 if st.button("Show chart", key=f"{ds_key}_show_chart"):
-                    fig = None
-                    try:
-                        if chart_choice == "Histogram (single numeric)":
-                            if chart_params.get("color_col"):
-                                fig = px.histogram(df, x=chart_params["x_col"], color=chart_params["color_col"], nbins=chart_params["bins"])
-                            else:
-                                fig = px.histogram(df, x=chart_params["x_col"], nbins=chart_params["bins"])
-                        elif chart_choice == "Boxplot (single numeric)":
-                            if chart_params.get("group_col"):
-                                fig = px.box(df, x=chart_params["group_col"], y=chart_params["y_col"])
-                            else:
-                                fig = px.box(df, y=chart_params["y_col"])
-                        elif chart_choice == "Scatter (numeric X & Y)":
-                            if chart_params.get("color_col"):
-                                fig = px.scatter(df, x=chart_params["x_col"], y=chart_params["y_col"], color=df[chart_params["color_col"]].astype(str))
-                            else:
-                                fig = px.scatter(df, x=chart_params["x_col"], y=chart_params["y_col"])
-                        elif chart_choice == "Correlation heatmap (numeric columns)":
-                            corr = df[numeric_cols].corr()
-                            fig = px.imshow(corr, text_auto=True)
-                        if fig:
-                            st.plotly_chart(fig, use_container_width=True)
-                    except Exception as e:
-                        st.error(f"Error rendering chart: {e}")
+                    if color_col:
+                        fig = px.scatter(df, x=x_col, y=y_col, color=df[color_col].astype(str))
+                    else:
+                        fig = px.scatter(df, x=x_col, y=y_col)
+                    st.plotly_chart(fig, use_container_width=True)
 
-            with col_save:
-                if st.button("Save chart to PDF", key=f"{ds_key}_save_chart"):
-                    saved = {"ds_key": ds_key, "ds_name": chosen_name,
-                             "chart_type": chart_choice, "params": chart_params,
-                             "caption": caption, "time": datetime.utcnow().isoformat()}
-                    st.session_state["saved_charts"].append(saved)
-                    st.success("Chart saved to PDF queue")
+            elif chart_choice == "Correlation heatmap (numeric columns)" and len(numeric_cols)>=2:
+                if st.button("Show chart", key=f"{ds_key}_show_chart"):
+                    corr = df[numeric_cols].corr()
+                    fig = px.imshow(corr, text_auto=True)
+                    st.plotly_chart(fig, use_container_width=True)
 
-        # ------------------ RIGHT: PDF Queue ------------------
+        # ------------------ RIGHT ------------------
         with right_col:
             st.subheader("PDF Queue")
-            queue = st.session_state.get("saved_charts", [])
-            if not queue:
-                st.info("No charts queued yet.")
-            else:
-                for i, c in enumerate(queue,1):
-                    st.markdown(f"**{i}. {c['ds_name']}** — {c['chart_type']}")
-                    if c.get("caption"):
-                        st.caption(c["caption"])
-                    remove_key = f"remove_{i}_{ds_key}"
-                    if st.button("Remove", key=remove_key):
-                        st.session_state["saved_charts"].pop(i-1)
-                        st.experimental_rerun()
+            caption = st.text_input("Optional caption for PDF", key=f"{ds_key}_chart_caption")
 
-            if queue:
-                if st.button("Clear PDF queue", key=f"{ds_key}_clear_queue"):
-                    st.session_state["saved_charts"] = []
-                    st.success("PDF queue cleared")
+            if st.button("Save chart to PDF", key=f"{ds_key}_save_chart"):
+                if fig is not None:
+                    saved = {
+                        "ds_key": ds_key,
+                        "ds_name": chosen_name,
+                        "chart_type": chart_choice,
+                        "params": chart_params,
+                        "caption": caption,
+                        "time": datetime.utcnow().isoformat(),
+                        "figure": fig  # <-- store the figure!
+                    }
+                    st.session_state["saved_charts"].append(saved)
+                    st.success("Chart saved to PDF queue")
+                else:
+                    st.warning("Please generate the chart first before saving.")
 # -----------------------------
 # Tab 4: Compare & Contrast
 # -----------------------------
@@ -487,11 +430,9 @@ with tab5:
     if cleaned_a is None and cleaned_b is None:
         st.info("No datasets available. Please upload and clean datasets in Tabs 1–2.")
     else:
-        # Custom dataset names for the report
         report_name_a = st.text_input("Dataset A report name", value=st.session_state.get("cleaned_a_name", "Dataset A"))
-        report_name_b = st.text_input("Dataset B report name", value=st.session_state.get("cleaned_b_name", "Dataset B") if cleaned_b is not None else "")
+        report_name_b = st.text_input("Dataset B report name", value=st.session_state.get("cleaned_b_name", "Dataset B") if cleaned_b else "")
 
-        # Optional notes
         notes = st.text_area("Optional notes / observations for the report", value="")
 
         if st.button("Generate PDF Summary"):
@@ -499,7 +440,7 @@ with tab5:
             pdf = FPDF()
             pdf.set_auto_page_break(auto=True, margin=15)
 
-            # ------------------ Title Page ------------------
+            # Title page
             pdf.add_page()
             pdf.set_font("Arial", "B", 16)
             pdf.cell(0, 10, "DataLens PDF Summary Report", ln=True, align="C")
@@ -507,35 +448,33 @@ with tab5:
             pdf.ln(5)
             pdf.cell(0, 10, f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}", ln=True)
             pdf.cell(0, 10, f"Dataset A: {report_name_a}", ln=True)
-            pdf.cell(0, 10, f"Dataset B: {report_name_b if cleaned_b is not None else 'Not uploaded'}", ln=True)
+            pdf.cell(0, 10, f"Dataset B: {report_name_b if cleaned_b else 'Not uploaded'}", ln=True)
             pdf.ln(5)
             if notes:
                 pdf.multi_cell(0, 8, f"Notes: {notes}")
 
-            # ------------------ Dataset Health ------------------
-            def add_dataset_health(df, dataset_name):
+            # Dataset health pages
+            def add_dataset_health(df, name):
                 pdf.add_page()
                 pdf.set_font("Arial", "B", 14)
-                pdf.cell(0, 10, f"{dataset_name} - Dataset Health", ln=True)
+                pdf.cell(0, 10, f"{name} - Dataset Health", ln=True)
                 pdf.set_font("Arial", "", 12)
                 pdf.ln(5)
-
                 n_rows, n_cols = df.shape
                 pct_missing = df.isna().mean().mean() * 100
                 dup_count = df.duplicated().sum()
                 pdf.cell(0, 8, f"Rows: {n_rows}, Columns: {n_cols}, % Missing: {pct_missing:.1f}%, Duplicates: {dup_count}", ln=True)
-
                 numeric_cols = df.select_dtypes(include=['number']).columns
                 cat_cols = df.select_dtypes(include=['object']).columns
                 pdf.cell(0, 8, f"Numeric columns: {len(numeric_cols)}, Categorical columns: {len(cat_cols)}", ln=True)
                 pdf.ln(5)
 
-            if cleaned_a is not None:
+            if cleaned_a:
                 add_dataset_health(cleaned_a, report_name_a)
-            if cleaned_b is not None:
+            if cleaned_b:
                 add_dataset_health(cleaned_b, report_name_b)
 
-            # ------------------ Charts Section ------------------
+            # Charts
             for chart in saved_charts:
                 fig = chart.get("figure")
                 caption = chart.get("caption", "")
@@ -555,30 +494,26 @@ with tab5:
                     except Exception as e:
                         st.warning(f"Could not render chart '{chart['chart_type']}': {e}")
 
-            # ------------------ Compare & Contrast ------------------
-            if cleaned_a is not None and cleaned_b is not None:
-                report = st.session_state.get("compare_report")
-                if report:
-                    pdf.add_page()
-                    pdf.set_font("Arial", "B", 14)
-                    pdf.cell(0, 10, "Compare & Contrast Summary", ln=True)
-                    pdf.set_font("Arial", "", 12)
-                    pdf.ln(5)
+            # Compare & Contrast summary (optional)
+            report = st.session_state.get("compare_report")
+            if report and cleaned_a and cleaned_b:
+                pdf.add_page()
+                pdf.set_font("Arial", "B", 14)
+                pdf.cell(0, 10, "Compare & Contrast Summary", ln=True)
+                pdf.set_font("Arial", "", 12)
+                pdf.ln(5)
+                shared_cols = set(cleaned_a.columns) & set(cleaned_b.columns)
+                pdf.cell(0, 8, f"Shared Columns ({len(shared_cols)}): {', '.join(shared_cols)}", ln=True)
+                pdf.cell(0, 8, f"Unique to {report_name_a}: {', '.join(report['only_cols_a']) if report['only_cols_a'] else 'None'}", ln=True)
+                pdf.cell(0, 8, f"Unique to {report_name_b}: {', '.join(report['only_cols_b']) if report['only_cols_b'] else 'None'}", ln=True)
+                if report.get("numeric_comparison"):
+                    pdf.cell(0, 8, "Numeric Differences (shared columns):", ln=True)
+                    for col in report["numeric_comparison"]:
+                        mean_a = cleaned_a[col].mean()
+                        mean_b = cleaned_b[col].mean()
+                        pdf.cell(0, 8, f"{col} | {report_name_a} mean: {mean_a:.2f}, {report_name_b} mean: {mean_b:.2f}, diff: {mean_b - mean_a:.2f}", ln=True)
 
-                    shared_cols = set(cleaned_a.columns) & set(cleaned_b.columns)
-                    pdf.cell(0, 8, f"Shared Columns ({len(shared_cols)}): {', '.join(shared_cols)}", ln=True)
-                    pdf.cell(0, 8, f"Unique to {report_name_a}: {', '.join(report['only_cols_a']) if report['only_cols_a'] else 'None'}", ln=True)
-                    pdf.cell(0, 8, f"Unique to {report_name_b}: {', '.join(report['only_cols_b']) if report['only_cols_b'] else 'None'}", ln=True)
-                    pdf.ln(5)
-
-                    if report.get("numeric_comparison"):
-                        pdf.cell(0, 8, "Numeric Differences (shared columns):", ln=True)
-                        for col in report["numeric_comparison"]:
-                            mean_a = cleaned_a[col].mean()
-                            mean_b = cleaned_b[col].mean()
-                            pdf.cell(0, 8, f"{col} | {report_name_a} mean: {mean_a:.2f}, {report_name_b} mean: {mean_b:.2f}, diff: {mean_b - mean_a:.2f}", ln=True)
-
-            # ------------------ Output PDF ------------------
+            # Output PDF
             pdf_bytes = pdf.output(dest='S').encode('latin1')
             st.download_button(
                 "Download PDF Summary",
