@@ -494,7 +494,6 @@ with tab5:
             numeric_cols = df.select_dtypes(include=['number']).columns
             cat_cols = df.select_dtypes(include=['object']).columns
             pdf.cell(0, 10, f"Numeric columns: {len(numeric_cols)}, Categorical columns: {len(cat_cols)}", ln=True)
-
             pdf.ln(5)
 
         # -----------------------------
@@ -560,9 +559,8 @@ with tab5:
                     pdf.cell(0, 8, f"{col} | {name_a} mean: {mean_a:.2f}, {name_b} mean: {mean_b:.2f}, diff: {mean_b - mean_a:.2f}", ln=True)
 
         # -----------------------------
-        # Output PDF
+        # Output PDF (In-memory safe)
         # -----------------------------
-        pdf_buffer = io.BytesIO()
-        pdf.output(pdf_buffer)
-        pdf_buffer.seek(0)
+        pdf_bytes = pdf.output(dest='S').encode('latin1')  # Correct for BytesIO
+        pdf_buffer = io.BytesIO(pdf_bytes)
         st.download_button("Download PDF Summary", data=pdf_buffer, file_name="data_summary.pdf")
