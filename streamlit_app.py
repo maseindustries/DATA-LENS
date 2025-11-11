@@ -543,7 +543,6 @@ with tab4:
         st.download_button("Download Compare Report (Excel)", data=buf_excel, file_name="compare_report.xlsx")
     else:
         st.info("No comparison report available. Complete Compare & Contrast (Tab 4) first.")
-        # ------------------ Tab 4 ------------------
 # --- Temporary dummy data for testing Tab 5 ---
 if st.session_state.get("cleaned_a") is None:
     st.session_state.cleaned_a = pd.DataFrame({
