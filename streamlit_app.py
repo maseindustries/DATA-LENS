@@ -443,101 +443,118 @@ with tab4:
 with tab5:
     st.header("PDF Summary Report")
 
+    # Optional custom report title
+    report_title = st.text_input("Report Title", value="DataLens PDF Summary Report")
+
+    # Get datasets
     cleaned_a = st.session_state.get("cleaned_a")
     cleaned_b = st.session_state.get("cleaned_b")
-    saved_charts = st.session_state.get("saved_charts", [])
+    name_a = st.session_state.get("cleaned_a_name", "Dataset A")
+    name_b = st.session_state.get("cleaned_b_name", "Dataset B")
 
-    if cleaned_a is None and cleaned_b is None:
-        st.info("No datasets available. Please upload and clean datasets in Tabs 1–2.")
-    else:
-        report_name_a = st.text_input("Dataset A report name", value=st.session_state.get("cleaned_a_name", "Dataset A"))
-        report_name_b = st.text_input("Dataset B report name", value=st.session_state.get("cleaned_b_name", "Dataset B") if cleaned_b else "")
+    st.info("This PDF will include dataset summaries, charts, and comparison (if both datasets exist).")
 
-        notes = st.text_area("Optional notes / observations for the report", value="")
+    # Optional notes for executive summary
+    notes = st.text_area("Optional notes / observations for the report", value="")
 
-        if st.button("Generate PDF Summary"):
+    if st.button("Generate PDF Summary"):
+        pdf = FPDF()
+        pdf.set_auto_page_break(auto=True, margin=15)
 
-            pdf = FPDF()
-            pdf.set_auto_page_break(auto=True, margin=15)
+        # -----------------------------
+        # Title Page / Overview
+        # -----------------------------
+        pdf.add_page()
+        pdf.set_font("Arial", "B", 16)
+        pdf.cell(0, 10, report_title, ln=True, align="C")
+        pdf.set_font("Arial", "", 12)
+        pdf.ln(5)
+        pdf.cell(0, 10, f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}", ln=True)
+        pdf.cell(0, 10, f"Dataset A: {name_a}", ln=True)
+        pdf.cell(0, 10, f"Dataset B: {name_b if cleaned_b is not None else 'Not uploaded'}", ln=True)
+        pdf.ln(10)
+        if notes:
+            pdf.multi_cell(0, 8, f"Notes: {notes}")
 
-            # Title page
+        # -----------------------------
+        # Function: Dataset Summary
+        # -----------------------------
+        def add_dataset_summary(df, dataset_name):
             pdf.add_page()
-            pdf.set_font("Arial", "B", 16)
-            pdf.cell(0, 10, "DataLens PDF Summary Report", ln=True, align="C")
+            pdf.set_font("Arial", "B", 14)
+            pdf.cell(0, 10, f"{dataset_name} Summary", ln=True)
             pdf.set_font("Arial", "", 12)
-            pdf.ln(5)
-            pdf.cell(0, 10, f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}", ln=True)
-            pdf.cell(0, 10, f"Dataset A: {report_name_a}", ln=True)
-            pdf.cell(0, 10, f"Dataset B: {report_name_b if cleaned_b else 'Not uploaded'}", ln=True)
-            pdf.ln(5)
-            if notes:
-                pdf.multi_cell(0, 8, f"Notes: {notes}")
+            pdf.cell(0, 10, f"Rows: {df.shape[0]}, Columns: {df.shape[1]}", ln=True)
 
-            # Dataset health pages
-            def add_dataset_health(df, name):
+            # Percent missing and duplicates
+            missing_pct = df.isna().mean().mean() * 100
+            duplicates = df.duplicated().sum()
+            pdf.cell(0, 10, f"% Missing: {missing_pct:.2f}%, Duplicates: {duplicates}", ln=True)
+
+            numeric_cols = df.select_dtypes(include=['number']).columns
+            cat_cols = df.select_dtypes(include=['object']).columns
+            pdf.cell(0, 10, f"Numeric columns: {len(numeric_cols)}, Categorical columns: {len(cat_cols)}", ln=True)
+
+            pdf.ln(5)
+
+        # -----------------------------
+        # Add Dataset Summaries
+        # -----------------------------
+        if cleaned_a is not None:
+            add_dataset_summary(cleaned_a, name_a)
+
+        if cleaned_b is not None:
+            add_dataset_summary(cleaned_b, name_b)
+
+        # -----------------------------
+        # Add Saved Charts
+        # -----------------------------
+        saved_charts = st.session_state.get("saved_charts", [])
+        for chart in saved_charts:
+            fig = chart.get("figure")
+            if fig is not None:
+                # Export Plotly figure to image
                 pdf.add_page()
                 pdf.set_font("Arial", "B", 14)
-                pdf.cell(0, 10, f"{name} - Dataset Health", ln=True)
-                pdf.set_font("Arial", "", 12)
+                pdf.cell(0, 10, f"{chart['ds_name']} - {chart['chart_type']}", ln=True)
+                if chart.get("caption"):
+                    pdf.set_font("Arial", "", 12)
+                    pdf.multi_cell(0, 8, f"Caption: {chart['caption']}")
+                # Save figure to temporary PNG
+                img_bytes = fig.to_image(format="png", width=800, height=600)
+                pdf.image(io.BytesIO(img_bytes), x=10, y=None, w=180)
+        
+        # -----------------------------
+        # Compare & Contrast Section
+        # -----------------------------
+        if cleaned_a is not None and cleaned_b is not None:
+            pdf.add_page()
+            pdf.set_font("Arial", "B", 14)
+            pdf.cell(0, 10, "Compare & Contrast Summary", ln=True)
+            pdf.set_font("Arial", "", 12)
+
+            shared_cols = [c for c in cleaned_a.columns if c in cleaned_b.columns]
+            unique_a = [c for c in cleaned_a.columns if c not in cleaned_b.columns]
+            unique_b = [c for c in cleaned_b.columns if c not in cleaned_a.columns]
+
+            pdf.cell(0, 10, f"Shared Columns ({len(shared_cols)}): {', '.join(shared_cols)}", ln=True)
+            pdf.cell(0, 10, f"Unique to {name_a}: {', '.join(unique_a) if unique_a else 'None'}", ln=True)
+            pdf.cell(0, 10, f"Unique to {name_b}: {', '.join(unique_b) if unique_b else 'None'}", ln=True)
+
+            # Basic numeric differences
+            numeric_common = [c for c in shared_cols if pd.api.types.is_numeric_dtype(cleaned_a[c]) and pd.api.types.is_numeric_dtype(cleaned_b[c])]
+            if numeric_common:
                 pdf.ln(5)
-                n_rows, n_cols = df.shape
-                pct_missing = df.isna().mean().mean() * 100
-                dup_count = df.duplicated().sum()
-                pdf.cell(0, 8, f"Rows: {n_rows}, Columns: {n_cols}, % Missing: {pct_missing:.1f}%, Duplicates: {dup_count}", ln=True)
-                numeric_cols = df.select_dtypes(include=['number']).columns
-                cat_cols = df.select_dtypes(include=['object']).columns
-                pdf.cell(0, 8, f"Numeric columns: {len(numeric_cols)}, Categorical columns: {len(cat_cols)}", ln=True)
-                pdf.ln(5)
+                pdf.cell(0, 10, "Numeric differences for shared columns:", ln=True)
+                for col in numeric_common:
+                    mean_a = cleaned_a[col].mean()
+                    mean_b = cleaned_b[col].mean()
+                    pdf.cell(0, 8, f"{col} | {name_a} mean: {mean_a:.2f}, {name_b} mean: {mean_b:.2f}, diff: {mean_b - mean_a:.2f}", ln=True)
 
-            if cleaned_a:
-                add_dataset_health(cleaned_a, report_name_a)
-            if cleaned_b:
-                add_dataset_health(cleaned_b, report_name_b)
-
-            # Charts
-            for chart in saved_charts:
-                fig = chart.get("figure")
-                caption = chart.get("caption", "")
-                if fig:
-                    try:
-                        img_buf = io.BytesIO()
-                        fig.write_image(img_buf, format="png")
-                        img_buf.seek(0)
-                        pdf.add_page()
-                        pdf.set_font("Arial", "B", 14)
-                        pdf.cell(0, 10, f"{chart['ds_name']} - {chart['chart_type']}", ln=True)
-                        pdf.image(img_buf, x=10, w=180)
-                        if caption:
-                            pdf.set_font("Arial", "", 12)
-                            pdf.ln(5)
-                            pdf.multi_cell(0, 8, f"Caption: {caption}")
-                    except Exception as e:
-                        st.warning(f"Could not render chart '{chart['chart_type']}': {e}")
-
-            # Compare & Contrast summary (optional)
-            report = st.session_state.get("compare_report")
-            if report and cleaned_a and cleaned_b:
-                pdf.add_page()
-                pdf.set_font("Arial", "B", 14)
-                pdf.cell(0, 10, "Compare & Contrast Summary", ln=True)
-                pdf.set_font("Arial", "", 12)
-                pdf.ln(5)
-                shared_cols = set(cleaned_a.columns) & set(cleaned_b.columns)
-                pdf.cell(0, 8, f"Shared Columns ({len(shared_cols)}): {', '.join(shared_cols)}", ln=True)
-                pdf.cell(0, 8, f"Unique to {report_name_a}: {', '.join(report['only_cols_a']) if report['only_cols_a'] else 'None'}", ln=True)
-                pdf.cell(0, 8, f"Unique to {report_name_b}: {', '.join(report['only_cols_b']) if report['only_cols_b'] else 'None'}", ln=True)
-                if report.get("numeric_comparison"):
-                    pdf.cell(0, 8, "Numeric Differences (shared columns):", ln=True)
-                    for col in report["numeric_comparison"]:
-                        mean_a = cleaned_a[col].mean()
-                        mean_b = cleaned_b[col].mean()
-                        pdf.cell(0, 8, f"{col} | {report_name_a} mean: {mean_a:.2f}, {report_name_b} mean: {mean_b:.2f}, diff: {mean_b - mean_a:.2f}", ln=True)
-
-            # Output PDF
-            pdf_bytes = pdf.output(dest='S').encode('latin1')
-            st.download_button(
-                "Download PDF Summary",
-                data=pdf_bytes,
-                file_name="data_summary.pdf",
-                mime="application/pdf"
-            )
+        # -----------------------------
+        # Output PDF
+        # -----------------------------
+        pdf_buffer = io.BytesIO()
+        pdf.output(pdf_buffer)
+        pdf_buffer.seek(0)
+        st.download_button("Download PDF Summary", data=pdf_buffer, file_name="data_summary.pdf")
