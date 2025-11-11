@@ -452,7 +452,7 @@ with tab5:
     name_a = st.session_state.get("cleaned_a_name", "Dataset A")
     name_b = st.session_state.get("cleaned_b_name", "Dataset B")
 
-    st.info("This PDF will include dataset summaries, charts, and comparison (if both datasets exist).")
+    st.info("This PDF will include dataset summaries, charts (if generated), and comparisons.")
 
     # Optional notes for executive summary
     notes = st.text_area("Optional notes / observations for the report", value="")
@@ -507,23 +507,31 @@ with tab5:
             add_dataset_summary(cleaned_b, name_b)
 
         # -----------------------------
-        # Add Saved Charts
+        # Add Saved Charts (Safe Handling)
         # -----------------------------
         saved_charts = st.session_state.get("saved_charts", [])
-        for chart in saved_charts:
-            fig = chart.get("figure")
-            if fig is not None:
-                # Export Plotly figure to image
+        if saved_charts:
+            for chart in saved_charts:
+                fig = chart.get("figure")
                 pdf.add_page()
                 pdf.set_font("Arial", "B", 14)
                 pdf.cell(0, 10, f"{chart['ds_name']} - {chart['chart_type']}", ln=True)
                 if chart.get("caption"):
                     pdf.set_font("Arial", "", 12)
                     pdf.multi_cell(0, 8, f"Caption: {chart['caption']}")
-                # Save figure to temporary PNG
-                img_bytes = fig.to_image(format="png", width=800, height=600)
-                pdf.image(io.BytesIO(img_bytes), x=10, y=None, w=180)
-        
+
+                if fig is not None:
+                    try:
+                        # Attempt to export chart as PNG (may fail on cloud)
+                        img_bytes = fig.to_image(format="png")
+                        pdf.image(io.BytesIO(img_bytes), x=10, y=None, w=180)
+                    except Exception:
+                        pdf.set_font("Arial", "", 12)
+                        pdf.cell(0, 10, "Chart not available (environment limitation)", ln=True)
+                else:
+                    pdf.set_font("Arial", "", 12)
+                    pdf.cell(0, 10, "Please generate the chart first before saving.", ln=True)
+
         # -----------------------------
         # Compare & Contrast Section
         # -----------------------------
