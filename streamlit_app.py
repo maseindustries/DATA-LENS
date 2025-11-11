@@ -205,7 +205,7 @@ with tab2:
         st.write("DEBUG: Session state types after cleaning")
         st.write(f"cleaned_a type = {type(st.session_state.get('cleaned_a'))}")
         st.write(f"cleaned_b type = {type(st.session_state.get('cleaned_b'))}")
-        # -----------------------------
+# -----------------------------
 # Tab 3: Exploratory Data Analysis (EDA)
 # -----------------------------
 with tab3:
@@ -215,19 +215,19 @@ with tab3:
     if "saved_charts" not in st.session_state:
         st.session_state["saved_charts"] = []
 
-    # Available datasets
     datasets = [
         ("cleaned_a", st.session_state.get("cleaned_a_name", "Dataset A")),
         ("cleaned_b", st.session_state.get("cleaned_b_name", "Dataset B"))
     ]
-    available = [(key, name) for key, name in datasets if isinstance(st.session_state.get(key), pd.DataFrame)]
 
+    # Only keep datasets that exist
+    available = [(key, name) for key, name in datasets if isinstance(st.session_state.get(key), pd.DataFrame)]
     if not available:
         st.warning("Please upload & clean at least one dataset in Tabs 1–2 before running EDA.")
     else:
         left_col, center_col, right_col = st.columns([2, 3, 1])
 
-        # ------------------ LEFT: Dataset Overview ------------------
+        # ------------------ LEFT: Dataset overview ------------------
         with left_col:
             st.subheader("Dataset selection & overview")
             chosen_name = st.selectbox("Choose dataset", [name for _, name in available], key="eda_choose_ds")
@@ -261,9 +261,9 @@ with tab3:
                 else:
                     st.info("No categorical columns.")
 
-        # ------------------ CENTER: Chart Selection ------------------
+        # ------------------ CENTER: Charts ------------------
         with center_col:
-            st.subheader("Chart Builder")
+            st.subheader("Charts")
             chart_options = [
                 "None",
                 "Histogram (single numeric)",
@@ -271,12 +271,13 @@ with tab3:
                 "Scatter (numeric X & Y)",
                 "Correlation heatmap (numeric columns)"
             ]
-            chart_choice = st.selectbox("Choose chart type", chart_options, key=f"{ds_key}_chart_choice")
+            chart_choice = st.selectbox("Choose chart", chart_options, key=f"{ds_key}_chart_choice")
 
-            fig = None
-            chart_params = {}
-            caption = st.text_input("Optional caption", key=f"{ds_key}_chart_caption")
+            fig = None  # Figure object
+            chart_params = {}  # For saved queue
+            caption = st.text_input("Optional caption for saved chart", key=f"{ds_key}_chart_caption")
 
+            # Generate figure dynamically
             if chart_choice == "Histogram (single numeric)" and numeric_cols:
                 x_col = st.selectbox("Numeric column", numeric_cols, key=f"{ds_key}_hist_x")
                 bins = st.number_input("Bins", min_value=5, max_value=500, value=30, step=1, key=f"{ds_key}_hist_bins")
@@ -284,7 +285,8 @@ with tab3:
                 if cat_cols:
                     color_col = st.selectbox("Color by (categorical)", [None]+cat_cols, key=f"{ds_key}_hist_color")
                 chart_params.update({"x_col": x_col, "bins": bins, "color_col": color_col})
-                fig = px.histogram(df, x=x_col, nbins=bins, color=color_col if color_col else None)
+
+                fig = px.histogram(df, x=x_col, nbins=bins, color=color_col)
                 st.plotly_chart(fig, use_container_width=True)
 
             elif chart_choice == "Boxplot (single numeric)" and numeric_cols:
@@ -293,7 +295,8 @@ with tab3:
                 if cat_cols:
                     group_col = st.selectbox("Group by (categorical)", [None]+cat_cols, key=f"{ds_key}_box_group")
                 chart_params.update({"y_col": y_col, "group_col": group_col})
-                fig = px.box(df, y=y_col, x=group_col if group_col else None)
+
+                fig = px.box(df, x=group_col, y=y_col) if group_col else px.box(df, y=y_col)
                 st.plotly_chart(fig, use_container_width=True)
 
             elif chart_choice == "Scatter (numeric X & Y)" and len(numeric_cols) >= 2:
@@ -303,6 +306,7 @@ with tab3:
                 if cat_cols:
                     color_col = st.selectbox("Color by (categorical)", [None]+cat_cols, key=f"{ds_key}_scatter_color")
                 chart_params.update({"x_col": x_col, "y_col": y_col, "color_col": color_col})
+
                 fig = px.scatter(df, x=x_col, y=y_col, color=df[color_col].astype(str) if color_col else None)
                 st.plotly_chart(fig, use_container_width=True)
 
@@ -311,9 +315,9 @@ with tab3:
                 fig = px.imshow(corr, text_auto=True)
                 st.plotly_chart(fig, use_container_width=True)
 
-        # ------------------ RIGHT: Saved Charts / Queue ------------------
+        # ------------------ RIGHT: Saved Charts Queue ------------------
         with right_col:
-            st.subheader("Saved Charts")
+            st.subheader("Saved Charts Queue")
 
             if st.button("Save chart", key=f"{ds_key}_save_chart"):
                 if fig is not None:
@@ -324,7 +328,7 @@ with tab3:
                         "params": chart_params,
                         "caption": caption,
                         "time": datetime.utcnow().isoformat(),
-                        "figure": fig
+                        "figure": fig  # Store figure for optional download
                     }
                     st.session_state["saved_charts"].append(saved)
                     st.success("Chart saved")
@@ -338,19 +342,15 @@ with tab3:
                     if chart.get("caption"):
                         st.caption(chart["caption"])
 
-                    # Display figure with unique key
-                    st.plotly_chart(chart["figure"], use_container_width=True, key=f"saved_chart_{i}")
-
-                    # Remove chart button
-                    if st.button("Remove", key=f"remove_{i}"):
+                    remove_key = f"remove_{i}_{chart['ds_key']}"
+                    if st.button("Remove", key=remove_key):
                         st.session_state["saved_charts"].pop(i-1)
                         st.experimental_rerun()
 
-                    # Download PNG
-                    if st.button("Download PNG", key=f"download_{i}"):
+                    download_key = f"download_{i}_{chart['ds_key']}"
+                    if st.button("Download PNG", key=download_key):
                         img_bytes = chart["figure"].to_image(format="png", width=800, height=600)
                         st.download_button("Download PNG", data=img_bytes, file_name=f"{chart['ds_name']}_{i}.png")
-
 
 # -----------------------------
 # Tab 4: Compare & Contrast
