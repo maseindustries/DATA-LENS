@@ -380,21 +380,28 @@ with tab3:
                 if st.button("Clear PDF queue", key=f"{ds_key}_clear_queue"):
                     st.session_state["saved_charts"] = []
                     st.success("PDF queue cleared")
-# ------------------ Tab 4 ------------------
+# -----------------------------
+# Tab 4: Compare & Contrast
+# -----------------------------
 with tab4:
     st.header("Compare & Contrast")
 
-    # Safety: get cleaned datasets
+    # Get datasets from session state
     A = st.session_state.get("cleaned_a")
     B = st.session_state.get("cleaned_b")
     name_a = st.session_state.get("cleaned_a_name", "Dataset A")
     name_b = st.session_state.get("cleaned_b_name", "Dataset B")
 
-    # Only proceed if both datasets exist
-    if not isinstance(A, pd.DataFrame) or not isinstance(B, pd.DataFrame):
-        st.info("Please upload and clean a second dataset to use this feature.")
-        st.stop()  # Stop rendering further
-    else:
+    # Basic info
+    if A is None:
+        st.info("Dataset A is not available. Please upload and clean it in Tabs 1–2.")
+    if B is None:
+        st.info("Dataset B is not available. Some comparison features will be disabled.")
+
+    st.markdown("---")
+
+    # Only perform comparison if both datasets exist
+    if isinstance(A, pd.DataFrame) and isinstance(B, pd.DataFrame):
         st.write(f"**Datasets available:** {name_a} (A), {name_b} (B)")
 
         # Matching keys
@@ -411,126 +418,85 @@ with tab4:
         if auto_key:
             use_auto = st.checkbox(f"Auto-select '{auto_key}' as join key", value=True)
 
-        selected_keys = st.multiselect("Select key column(s) to match rows", options=common_cols,
-                                       default=[auto_key] if (auto_key and use_auto) else (common_cols[:1] if common_cols else []))
-        if not selected_keys:
-            st.warning("Select at least one key column to perform row-level comparisons.")
-            st.stop()
+        selected_keys = st.multiselect(
+            "Select key column(s) to match rows",
+            options=common_cols,
+            default=[auto_key] if (auto_key and use_auto) else (common_cols[:1] if common_cols else [])
+        )
 
-        dupA = A.duplicated(subset=selected_keys, keep=False).sum()
-        dupB = B.duplicated(subset=selected_keys, keep=False).sum()
-        st.write(f"Key duplicates: {name_a}: {dupA}/{A.shape[0]}, {name_b}: {dupB}/{B.shape[0]}")
+        if selected_keys:
+            dupA = A.duplicated(subset=selected_keys, keep=False).sum()
+            dupB = B.duplicated(subset=selected_keys, keep=False).sum()
+            st.write(f"Key duplicates: {name_a}: {dupA}/{A.shape[0]}, {name_b}: {dupB}/{B.shape[0]}")
 
-        # Merge and compare
-        merged = A.merge(B, on=selected_keys, how="outer", indicator=True, suffixes=("_A", "_B"))
-        only_a = merged[merged["_merge"] == "left_only"].drop(columns=["_merge"])
-        only_b = merged[merged["_merge"] == "right_only"].drop(columns=["_merge"])
-        both = merged[merged["_merge"] == "both"].drop(columns=["_merge"])
+            # Merge and compare
+            merged = A.merge(B, on=selected_keys, how="outer", indicator=True, suffixes=("_A", "_B"))
+            only_a = merged[merged["_merge"] == "left_only"].drop(columns=["_merge"])
+            only_b = merged[merged["_merge"] == "right_only"].drop(columns=["_merge"])
+            both = merged[merged["_merge"] == "both"].drop(columns=["_merge"])
 
-        # Summary metrics
-        st.markdown("### Summary")
-        c1, c2, c3 = st.columns(3)
-        c1.metric(f"Only in {name_a}", f"{only_a.shape[0]:,}")
-        c2.metric(f"Only in {name_b}", f"{only_b.shape[0]:,}")
-        c3.metric("Matched (both)", f"{both.shape[0]:,}")
+            st.markdown("### Summary Metrics")
+            c1, c2, c3 = st.columns(3)
+            c1.metric(f"Only in {name_a}", f"{only_a.shape[0]:,}")
+            c2.metric(f"Only in {name_b}", f"{only_b.shape[0]:,}")
+            c3.metric("Matched (both)", f"{both.shape[0]:,}")
 
-        # Expanders with previews and export
-        for label, df_part, fname in [
-            (f"Rows only in {name_a}", only_a, f"only_in_{name_a}.csv"),
-            (f"Rows only in {name_b}", only_b, f"only_in_{name_b}.csv"),
-            ("Rows in both", both, "matched_rows.csv")
-        ]:
-            with st.expander(f"Preview: {label} ({df_part.shape[0]})", expanded=False):
-                if not df_part.empty:
-                    st.dataframe(df_part.head(200))
-                    buf = io.BytesIO()
-                    df_part.to_csv(buf, index=False)
-                    buf.seek(0)
-                    st.download_button(f"Download {fname}", data=buf, file_name=fname)
-                else:
-                    st.info(f"No rows for {label}.")
+            st.markdown("---")
 
-        # Column comparison
-        st.markdown("### Column presence comparison")
-        cols_a = set(A.columns)
-        cols_b = set(B.columns)
-        only_cols_a = sorted(list(cols_a - cols_b))
-        only_cols_b = sorted(list(cols_b - cols_a))
-        common = sorted(list(cols_a & cols_b))
-        c1, c2 = st.columns(2)
-        with c1:
-            st.subheader(f"Columns only in {name_a} ({len(only_cols_a)})")
-            st.write(only_cols_a or "None")
-        with c2:
-            st.subheader(f"Columns only in {name_b} ({len(only_cols_b)})")
-            st.write(only_cols_b or "None")
+            # Column comparison
+            cols_a = set(A.columns)
+            cols_b = set(B.columns)
+            only_cols_a = sorted(list(cols_a - cols_b))
+            only_cols_b = sorted(list(cols_b - cols_a))
+            common = sorted(list(cols_a & cols_b))
+            c1, c2 = st.columns(2)
+            with c1:
+                st.subheader(f"Columns only in {name_a} ({len(only_cols_a)})")
+                st.write(only_cols_a or "None")
+            with c2:
+                st.subheader(f"Columns only in {name_b} ({len(only_cols_b)})")
+                st.write(only_cols_b or "None")
 
-        # Numeric differences
-        st.markdown("### Numeric differences for common numeric columns")
-        numeric_common = [c for c in common if pd.api.types.is_numeric_dtype(A[c]) and pd.api.types.is_numeric_dtype(B[c])]
-        if numeric_common:
-            stats = []
-            for col in numeric_common:
-                a_series = A.set_index(selected_keys)[col] if selected_keys else A[col]
-                b_series = B.set_index(selected_keys)[col] if selected_keys else B[col]
-                joined = a_series.to_frame("A").join(b_series.to_frame("B"), how="inner").dropna()
-                if not joined.empty:
-                    diff = joined["A"] - joined["B"]
-                    stats.append({
-                        "column": col,
-                        "n_compared": int(joined.shape[0]),
-                        "mean_diff": float(diff.mean()),
-                        "median_diff": float(diff.median()),
-                        "std_diff": float(diff.std())
-                    })
-            if stats:
-                st.dataframe(pd.DataFrame(stats).set_index("column"))
-            else:
-                st.info("No overlapping numeric values to compare.")
+            st.markdown("---")
+
+            # Save report for PDF
+            st.session_state["compare_report"] = {
+                "name_a": name_a,
+                "name_b": name_b,
+                "selected_keys": selected_keys,
+                "counts": {"only_a": only_a.shape[0], "only_b": only_b.shape[0], "both": both.shape[0]},
+                "only_cols_a": only_cols_a,
+                "only_cols_b": only_cols_b,
+                "numeric_comparison": [c for c in common if pd.api.types.is_numeric_dtype(A[c]) and pd.api.types.is_numeric_dtype(B[c])],
+                "timestamp": datetime.utcnow().isoformat()
+            }
+            st.success("Compare completed and saved for export/PDF.")
         else:
-            st.info("No numeric columns in common.")
+            st.info("Select at least one key column to perform row-level comparisons.")
+    st.markdown("---")
 
-        # Save report for PDF/export
-        st.session_state["compare_report"] = {
-            "name_a": name_a,
-            "name_b": name_b,
-            "selected_keys": selected_keys,
-            "counts": {"only_a": only_a.shape[0], "only_b": only_b.shape[0], "both": both.shape[0]},
-            "only_cols_a": only_cols_a,
-            "only_cols_b": only_cols_b,
-            "numeric_comparison": numeric_common,
-            "timestamp": datetime.utcnow().isoformat()
-        }
-        st.success("Compare completed and saved for export/PDF.")
-        # -----------------------------
-# Tab 5: PDF Summary with Visualizations
-# -----------------------------
 # -----------------------------
 # Tab 5: PDF Summary
 # -----------------------------
 with tab5:
     st.header("PDF Summary Report")
 
-    # Get datasets from session state
     cleaned_a = st.session_state.get("cleaned_a")
     cleaned_b = st.session_state.get("cleaned_b")
     name_a = st.session_state.get("cleaned_a_name", "Dataset A")
     name_b = st.session_state.get("cleaned_b_name", "Dataset B")
 
-    # Safety check: at least one dataset must exist
     if cleaned_a is None and cleaned_b is None:
-        st.info("No datasets available to generate PDF. Please upload and clean datasets in Tabs 1–2.")
+        st.info("No datasets available. Please upload and clean datasets in Tabs 1–2.")
     else:
         st.info("This PDF will include dataset summaries and comparison (if both datasets exist).")
-
-        # Optional notes for executive summary
         notes = st.text_area("Optional notes / observations for the report", value="")
 
         if st.button("Generate PDF Summary"):
             pdf = FPDF()
             pdf.set_auto_page_break(auto=True, margin=15)
 
-            # Title page / overview
+            # --- Title page ---
             pdf.add_page()
             pdf.set_font("Arial", "B", 16)
             pdf.cell(0, 10, "DataLens PDF Summary Report", ln=True, align="C")
@@ -551,9 +517,8 @@ with tab5:
                 pdf.cell(0, 10, f"Shape: {df.shape[0]} rows x {df.shape[1]} columns", ln=True)
                 pdf.ln(5)
 
-                # Numeric summary
                 numeric_cols = df.select_dtypes(include=['number']).columns
-                if len(numeric_cols) > 0:
+                if numeric_cols.any():
                     pdf.cell(0, 10, "Numeric Columns Summary:", ln=True)
                     for col in numeric_cols:
                         col_series = df[col]
@@ -564,9 +529,8 @@ with tab5:
                     pdf.cell(0, 10, "No numeric columns.", ln=True)
                 pdf.ln(5)
 
-                # Categorical summary
                 cat_cols = df.select_dtypes(include=['object']).columns
-                if len(cat_cols) > 0:
+                if cat_cols.any():
                     pdf.cell(0, 10, "Categorical Columns Summary:", ln=True)
                     for col in cat_cols:
                         col_series = df[col]
@@ -575,38 +539,30 @@ with tab5:
                 else:
                     pdf.cell(0, 10, "No categorical columns.", ln=True)
 
-            # Add summaries for available datasets
             if cleaned_a is not None:
                 add_dataset_summary(cleaned_a, name_a)
             if cleaned_b is not None:
                 add_dataset_summary(cleaned_b, name_b)
 
-            # Compare & Contrast if both datasets exist
+            # Compare if both datasets exist
             if cleaned_a is not None and cleaned_b is not None:
+                report = st.session_state.get("compare_report")
                 pdf.add_page()
                 pdf.set_font("Arial", "B", 14)
                 pdf.cell(0, 10, "Compare & Contrast Summary", ln=True)
                 pdf.set_font("Arial", "", 12)
+                if report:
+                    pdf.cell(0, 10, f"Shared Columns ({len(set(cleaned_a.columns) & set(cleaned_b.columns))}): "
+                                    f"{', '.join(set(cleaned_a.columns) & set(cleaned_b.columns))}", ln=True)
+                    pdf.cell(0, 10, f"Unique to {name_a}: {', '.join(report['only_cols_a']) if report['only_cols_a'] else 'None'}", ln=True)
+                    pdf.cell(0, 10, f"Unique to {name_b}: {', '.join(report['only_cols_b']) if report['only_cols_b'] else 'None'}", ln=True)
 
-                # Shared columns
-                shared_cols = [c for c in cleaned_a.columns if c in cleaned_b.columns]
-                pdf.cell(0, 10, f"Shared Columns ({len(shared_cols)}): {', '.join(shared_cols)}", ln=True)
+            # Output PDF
+            pdf_buffer = io.BytesIO()
+            pdf.output(pdf_buffer)
+            pdf_buffer.seek(0)
+            st.download_button("Download PDF Summary", data=pdf_buffer, file_name="data_summary.pdf")
 
-                # Unique columns
-                unique_a = [c for c in cleaned_a.columns if c not in cleaned_b.columns]
-                unique_b = [c for c in cleaned_b.columns if c not in cleaned_a.columns]
-                pdf.cell(0, 10, f"Unique to {name_a}: {', '.join(unique_a) if unique_a else 'None'}", ln=True)
-                pdf.cell(0, 10, f"Unique to {name_b}: {', '.join(unique_b) if unique_b else 'None'}", ln=True)
-
-                # Basic numeric differences for shared numeric columns
-                pdf.ln(5)
-                for col in shared_cols:
-                    if pd.api.types.is_numeric_dtype(cleaned_a[col]) and pd.api.types.is_numeric_dtype(cleaned_b[col]):
-                        mean_a = cleaned_a[col].mean()
-                        mean_b = cleaned_b[col].mean()
-                        pdf.cell(0, 8, f"{col} | {name_a} mean: {mean_a:.2f}, {name_b} mean: {mean_b:.2f}, diff: {mean_b - mean_a:.2f}", ln=True)
-
-            # Output PDF to buffer and provide download
             pdf_buffer = io.BytesIO()
             pdf.output(pdf_buffer)
             pdf_buffer.seek(0)
