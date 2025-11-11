@@ -428,9 +428,7 @@ with tab3:
                     st.write(f"**{i}. {c['ds_name']}** — {c['chart_type']}")
                     if c.get("caption"):
                         st.caption(c["caption"])
-
-           if queue:
+                        if queue:
     if st.button("Clear PDF queue"):
         st.session_state["saved_charts"] = []
         st.success("PDF queue cleared")
-
