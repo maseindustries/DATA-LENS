@@ -358,13 +358,13 @@ with tab3:
 with tab4:
     st.header("Compare & Contrast")
 
-    # Get datasets from session state
+    # Fetch datasets and names
     A = st.session_state.get("cleaned_a")
     B = st.session_state.get("cleaned_b")
     name_a = st.session_state.get("cleaned_a_name", "Dataset A")
     name_b = st.session_state.get("cleaned_b_name", "Dataset B")
 
-    # Basic info
+    # Show availability
     if A is None:
         st.info("Dataset A is not available. Please upload and clean it in Tabs 1–2.")
     if B is None:
@@ -372,17 +372,49 @@ with tab4:
 
     st.markdown("---")
 
-    # Only perform comparison if both datasets exist
     if isinstance(A, pd.DataFrame) and isinstance(B, pd.DataFrame):
-        st.write(f"**Datasets available:** {name_a} (A), {name_b} (B)")
+        # -----------------------------
+        # Dataset overview
+        # -----------------------------
+        st.subheader(f"Datasets: {name_a} vs {name_b}")
+        col1, col2 = st.columns(2)
+        with col1:
+            st.markdown(f"**{name_a}** — {A.shape[0]:,} rows × {A.shape[1]} cols")
+        with col2:
+            st.markdown(f"**{name_b}** — {B.shape[0]:,} rows × {B.shape[1]} cols")
 
-        # Matching keys
-        common_cols = list(set(A.columns).intersection(set(B.columns)))
-        st.write("Common columns detected:", common_cols or "(none)")
+        # -----------------------------
+        # Common & unique columns
+        # -----------------------------
+        cols_a = set(A.columns)
+        cols_b = set(B.columns)
+        shared_cols = sorted(list(cols_a & cols_b))
+        unique_a = sorted(list(cols_a - cols_b))
+        unique_b = sorted(list(cols_b - cols_a))
 
+        st.subheader("Column Comparison")
+        c1, c2, c3 = st.columns(3)
+        c1.metric(f"Shared columns", len(shared_cols))
+        c2.metric(f"Unique to {name_a}", len(unique_a))
+        c3.metric(f"Unique to {name_b}", len(unique_b))
+
+        # Optional table for detailed columns
+        with st.expander("View detailed column differences"):
+            st.write(f"**Shared columns ({len(shared_cols)}):** {shared_cols or 'None'}")
+            st.write(f"**Columns only in {name_a}:** {unique_a or 'None'}")
+            st.write(f"**Columns only in {name_b}:** {unique_b or 'None'}")
+
+        st.markdown("---")
+
+        # -----------------------------
+        # Select key columns for row comparison
+        # -----------------------------
+        st.subheader("Row-Level Comparison")
+
+        common_cols_for_keys = shared_cols
         auto_key = None
         for cand in ["id", "ID", "Id", "key", "Key", "email", "Email"]:
-            if cand in common_cols:
+            if cand in common_cols_for_keys:
                 auto_key = cand
                 break
 
@@ -392,57 +424,76 @@ with tab4:
 
         selected_keys = st.multiselect(
             "Select key column(s) to match rows",
-            options=common_cols,
-            default=[auto_key] if (auto_key and use_auto) else (common_cols[:1] if common_cols else [])
+            options=common_cols_for_keys,
+            default=[auto_key] if (auto_key and use_auto) else (common_cols_for_keys[:1] if common_cols_for_keys else [])
         )
 
         if selected_keys:
-            dupA = A.duplicated(subset=selected_keys, keep=False).sum()
-            dupB = B.duplicated(subset=selected_keys, keep=False).sum()
-            st.write(f"Key duplicates: {name_a}: {dupA}/{A.shape[0]}, {name_b}: {dupB}/{B.shape[0]}")
-
-            # Merge and compare
+            # Merge and compute differences
             merged = A.merge(B, on=selected_keys, how="outer", indicator=True, suffixes=("_A", "_B"))
             only_a = merged[merged["_merge"] == "left_only"].drop(columns=["_merge"])
             only_b = merged[merged["_merge"] == "right_only"].drop(columns=["_merge"])
             both = merged[merged["_merge"] == "both"].drop(columns=["_merge"])
 
-            st.markdown("### Summary Metrics")
+            # -----------------------------
+            # Summary metrics
+            # -----------------------------
+            st.subheader("Row-Level Summary")
+            total_rows = merged.shape[0]
             c1, c2, c3 = st.columns(3)
-            c1.metric(f"Only in {name_a}", f"{only_a.shape[0]:,}")
-            c2.metric(f"Only in {name_b}", f"{only_b.shape[0]:,}")
-            c3.metric("Matched (both)", f"{both.shape[0]:,}")
+            c1.metric(f"Only in {name_a}", f"{only_a.shape[0]:,}", f"{only_a.shape[0]/total_rows:.1%}")
+            c2.metric(f"Only in {name_b}", f"{only_b.shape[0]:,}", f"{only_b.shape[0]/total_rows:.1%}")
+            c3.metric("Matched (both)", f"{both.shape[0]:,}", f"{both.shape[0]/total_rows:.1%}")
+
+            # Optional detailed preview
+            with st.expander(f"Preview: Rows only in {name_a}"):
+                st.dataframe(only_a.head(50))
+            with st.expander(f"Preview: Rows only in {name_b}"):
+                st.dataframe(only_b.head(50))
+            with st.expander("Preview: Matched rows"):
+                st.dataframe(both.head(50))
 
             st.markdown("---")
 
-            # Column comparison
-            cols_a = set(A.columns)
-            cols_b = set(B.columns)
-            only_cols_a = sorted(list(cols_a - cols_b))
-            only_cols_b = sorted(list(cols_b - cols_a))
-            common = sorted(list(cols_a & cols_b))
-            c1, c2 = st.columns(2)
-            with c1:
-                st.subheader(f"Columns only in {name_a} ({len(only_cols_a)})")
-                st.write(only_cols_a or "None")
-            with c2:
-                st.subheader(f"Columns only in {name_b} ({len(only_cols_b)})")
-                st.write(only_cols_b or "None")
+            # -----------------------------
+            # Numeric column differences
+            # -----------------------------
+            st.subheader("Numeric Column Comparison (Shared Columns)")
+            numeric_common = [c for c in shared_cols if pd.api.types.is_numeric_dtype(A[c]) and pd.api.types.is_numeric_dtype(B[c])]
+            if numeric_common:
+                stats = []
+                for col in numeric_common:
+                    a_vals = A.set_index(selected_keys)[col]
+                    b_vals = B.set_index(selected_keys)[col]
+                    joined = a_vals.to_frame("A").join(b_vals.to_frame("B"), how="inner").dropna()
+                    if not joined.empty:
+                        diff = joined["B"] - joined["A"]
+                        stats.append({
+                            "column": col,
+                            "mean_A": joined["A"].mean(),
+                            "mean_B": joined["B"].mean(),
+                            "mean_diff": diff.mean(),
+                            "n_compared": joined.shape[0]
+                        })
+                if stats:
+                    st.dataframe(pd.DataFrame(stats).set_index("column").round(2))
+                else:
+                    st.info("No overlapping numeric values to compare.")
+            else:
+                st.info("No shared numeric columns.")
 
-            st.markdown("---")
-
-            # Save report for PDF
+            # Save for Tab 5 or export
             st.session_state["compare_report"] = {
                 "name_a": name_a,
                 "name_b": name_b,
                 "selected_keys": selected_keys,
                 "counts": {"only_a": only_a.shape[0], "only_b": only_b.shape[0], "both": both.shape[0]},
-                "only_cols_a": only_cols_a,
-                "only_cols_b": only_cols_b,
-                "numeric_comparison": [c for c in common if pd.api.types.is_numeric_dtype(A[c]) and pd.api.types.is_numeric_dtype(B[c])],
+                "unique_cols_a": unique_a,
+                "unique_cols_b": unique_b,
+                "numeric_common": numeric_common,
                 "timestamp": datetime.utcnow().isoformat()
             }
-            st.success("Compare completed and saved for export/PDF.")
+
         else:
             st.info("Select at least one key column to perform row-level comparisons.")
     st.markdown("---")
