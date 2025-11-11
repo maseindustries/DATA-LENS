@@ -474,25 +474,27 @@ with tab4:
         else:
             st.info("Select at least one key column to perform row-level comparisons.")
     st.markdown("---")
-    # -----------------------------
-# Tab 5: CEO-Ready PDF Summary
+ # -----------------------------
+# Tab 5: PDF Summary Report
 # -----------------------------
 with tab5:
     st.header("PDF Summary Report")
 
     cleaned_a = st.session_state.get("cleaned_a")
     cleaned_b = st.session_state.get("cleaned_b")
-    name_a = st.session_state.get("cleaned_a_name", "Dataset A")
-    name_b = st.session_state.get("cleaned_b_name", "Dataset B")
     saved_charts = st.session_state.get("saved_charts", [])
 
     if cleaned_a is None and cleaned_b is None:
         st.info("No datasets available. Please upload and clean datasets in Tabs 1–2.")
     else:
-        st.info("This PDF will include dataset summaries, charts, comparisons, and key insights.")
+        # Custom dataset names for the report
+        report_name_a = st.text_input("Dataset A report name", value=st.session_state.get("cleaned_a_name", "Dataset A"))
+        report_name_b = st.text_input("Dataset B report name", value=st.session_state.get("cleaned_b_name", "Dataset B") if cleaned_b is not None else "")
+
+        # Optional notes
         notes = st.text_area("Optional notes / observations for the report", value="")
 
-        if st.button("Generate CEO-Ready PDF Summary"):
+        if st.button("Generate PDF Summary"):
 
             pdf = FPDF()
             pdf.set_auto_page_break(auto=True, margin=15)
@@ -504,9 +506,9 @@ with tab5:
             pdf.set_font("Arial", "", 12)
             pdf.ln(5)
             pdf.cell(0, 10, f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}", ln=True)
-            pdf.cell(0, 10, f"Dataset A: {name_a}", ln=True)
-            pdf.cell(0, 10, f"Dataset B: {name_b if cleaned_b is not None else 'Not uploaded'}", ln=True)
-            pdf.ln(10)
+            pdf.cell(0, 10, f"Dataset A: {report_name_a}", ln=True)
+            pdf.cell(0, 10, f"Dataset B: {report_name_b if cleaned_b is not None else 'Not uploaded'}", ln=True)
+            pdf.ln(5)
             if notes:
                 pdf.multi_cell(0, 8, f"Notes: {notes}")
 
@@ -529,28 +531,27 @@ with tab5:
                 pdf.ln(5)
 
             if cleaned_a is not None:
-                add_dataset_health(cleaned_a, name_a)
+                add_dataset_health(cleaned_a, report_name_a)
             if cleaned_b is not None:
-                add_dataset_health(cleaned_b, name_b)
+                add_dataset_health(cleaned_b, report_name_b)
 
             # ------------------ Charts Section ------------------
-            if saved_charts:
-                for i, chart in enumerate(saved_charts, 1):
+            for chart in saved_charts:
+                fig = chart.get("figure")
+                caption = chart.get("caption", "")
+                if fig:
                     try:
-                        fig = chart.get("figure")
-                        caption = chart.get("caption", "")
-                        if fig:
-                            img_buf = io.BytesIO()
-                            fig.write_image(img_buf, format="png")
-                            img_buf.seek(0)
-                            pdf.add_page()
-                            pdf.set_font("Arial", "B", 14)
-                            pdf.cell(0, 10, f"{chart['ds_name']} - {chart['chart_type']}", ln=True)
-                            pdf.image(img_buf, x=10, w=180)
-                            if caption:
-                                pdf.set_font("Arial", "", 12)
-                                pdf.ln(5)
-                                pdf.multi_cell(0, 8, f"Caption: {caption}")
+                        img_buf = io.BytesIO()
+                        fig.write_image(img_buf, format="png")
+                        img_buf.seek(0)
+                        pdf.add_page()
+                        pdf.set_font("Arial", "B", 14)
+                        pdf.cell(0, 10, f"{chart['ds_name']} - {chart['chart_type']}", ln=True)
+                        pdf.image(img_buf, x=10, w=180)
+                        if caption:
+                            pdf.set_font("Arial", "", 12)
+                            pdf.ln(5)
+                            pdf.multi_cell(0, 8, f"Caption: {caption}")
                     except Exception as e:
                         st.warning(f"Could not render chart '{chart['chart_type']}': {e}")
 
@@ -566,8 +567,8 @@ with tab5:
 
                     shared_cols = set(cleaned_a.columns) & set(cleaned_b.columns)
                     pdf.cell(0, 8, f"Shared Columns ({len(shared_cols)}): {', '.join(shared_cols)}", ln=True)
-                    pdf.cell(0, 8, f"Unique to {name_a}: {', '.join(report['only_cols_a']) if report['only_cols_a'] else 'None'}", ln=True)
-                    pdf.cell(0, 8, f"Unique to {name_b}: {', '.join(report['only_cols_b']) if report['only_cols_b'] else 'None'}", ln=True)
+                    pdf.cell(0, 8, f"Unique to {report_name_a}: {', '.join(report['only_cols_a']) if report['only_cols_a'] else 'None'}", ln=True)
+                    pdf.cell(0, 8, f"Unique to {report_name_b}: {', '.join(report['only_cols_b']) if report['only_cols_b'] else 'None'}", ln=True)
                     pdf.ln(5)
 
                     if report.get("numeric_comparison"):
@@ -575,25 +576,13 @@ with tab5:
                         for col in report["numeric_comparison"]:
                             mean_a = cleaned_a[col].mean()
                             mean_b = cleaned_b[col].mean()
-                            pdf.cell(0, 8, f"{col} | {name_a} mean: {mean_a:.2f}, {name_b} mean: {mean_b:.2f}, diff: {mean_b - mean_a:.2f}", ln=True)
-                        pdf.ln(5)
-
-                    # Actionable insights (top 5 numeric differences)
-                    pdf.set_font("Arial", "B", 12)
-                    pdf.cell(0, 8, "Key Insights & Recommendations:", ln=True)
-                    pdf.set_font("Arial", "", 12)
-                    for col in report.get("numeric_comparison", [])[:5]:
-                        mean_a = cleaned_a[col].mean()
-                        mean_b = cleaned_b[col].mean()
-                        diff = mean_b - mean_a
-                        pdf.cell(0, 8, f"- Check '{col}': mean difference = {diff:.2f}", ln=True)
+                            pdf.cell(0, 8, f"{col} | {report_name_a} mean: {mean_a:.2f}, {report_name_b} mean: {mean_b:.2f}, diff: {mean_b - mean_a:.2f}", ln=True)
 
             # ------------------ Output PDF ------------------
             pdf_bytes = pdf.output(dest='S').encode('latin1')
             st.download_button(
-                "Download CEO-Ready PDF",
+                "Download PDF Summary",
                 data=pdf_bytes,
-                file_name="data_summary_ceo.pdf",
+                file_name="data_summary.pdf",
                 mime="application/pdf"
             )
-    
