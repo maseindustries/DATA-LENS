@@ -416,19 +416,19 @@ with tab3:
                         st.session_state["saved_charts"].append(saved)
                         st.success("Chart saved for PDF summary")
 
-        # RIGHT column: show queue & controls
-        with right:
-            st.subheader("PDF Queue")
-            queue = st.session_state.get("saved_charts", [])
-            if not queue:
-                st.info("No charts queued yet.")
-            else:
-                st.write(f"Charts queued: {len(queue)}")
-                for i, c in enumerate(queue, 1):
-                    st.write(f"**{i}. {c['ds_name']}** — {c['chart_type']}")
-                    if c.get("caption"):
-                        st.caption(c["caption"])
-                        if queue:
+        
+with right:
+    st.subheader("PDF Queue")
+    queue = st.session_state.get("saved_charts", [])
+    if not queue:
+        st.info("No charts queued yet.")
+    else:
+        st.write(f"Charts queued: {len(queue)}")
+        for i, c in enumerate(queue, 1):
+            st.write(f"**{i}. {c['ds_name']}** — {c['chart_type']}")
+            if c.get("caption"):
+                st.caption(c["caption"])
+
         if st.button("Clear PDF queue"):
-        st.session_state["saved_charts"] = []
-        st.success("PDF queue cleared")
+            st.session_state["saved_charts"] = []
+            st.success("PDF queue cleared")
