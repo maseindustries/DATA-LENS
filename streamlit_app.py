@@ -205,38 +205,41 @@ with tab2:
         st.write("DEBUG: Session state types after cleaning")
         st.write(f"cleaned_a type = {type(st.session_state.get('cleaned_a'))}")
         st.write(f"cleaned_b type = {type(st.session_state.get('cleaned_b'))}")
- # -----------------------------
-# Tab 3: EDA
-# -----------------------------
+     
+        # -----------------------------
+        # ---------- Tab 3: EDA (with chart-save for PDF) ----------
 with tab3:
-    st.header("Exploratory Data Analysis (EDA)")
+    st.header("Exploratory Data Analysis (EDA) — Charts savable for PDF")
 
-    # Datasets to consider
+    # ensure saved_charts exists
+    if "saved_charts" not in st.session_state:
+        st.session_state["saved_charts"] = []  # list of dicts {ds_key, ds_name, type, params..., caption, timestamp}
+
+    # Datasets and friendly names
     datasets = [
-        ("cleaned_a", "Dataset A"),
-        ("cleaned_b", "Dataset B")
+        ("cleaned_a", st.session_state.get("cleaned_a_name", "Dataset A")),
+        ("cleaned_b", st.session_state.get("cleaned_b_name", "Dataset B"))
     ]
 
-    # Check if any dataset is available (prefer _saved flags if present)
-    any_saved = any(st.session_state.get(f"{ds_name}_saved") or isinstance(st.session_state.get(ds_name), pd.DataFrame)
-                    for ds_name, _ in datasets)
-    if not any_saved:
+    # Build list of available datasets (only DataFrames)
+    available = [(key, name) for key, name in datasets if isinstance(st.session_state.get(key), pd.DataFrame)]
+
+    if not available:
         st.warning("Please upload & clean at least one dataset in Tabs 1–2 before running EDA.")
     else:
-        # Let user choose which dataset to inspect
-        available = [label for ds_name, label in datasets
-                     if isinstance(st.session_state.get(ds_name), pd.DataFrame)]
-        chosen_label = st.selectbox("Choose dataset for EDA", options=available)
+        # Map display names -> keys so user sees saved names
+        display_names = [name for _, name in available]
+        chosen_name = st.selectbox("Choose dataset for EDA", options=display_names)
 
-        # Map back to session_state key
-        ds_key = "cleaned_a" if chosen_label == "Dataset A" else "cleaned_b"
+        # find corresponding key
+        ds_key = next(key for key, name in available if name == chosen_name)
         df = st.session_state.get(ds_key)
 
-        # Extra safety check
+        # Extra safety
         if df is None or not isinstance(df, pd.DataFrame):
-            st.error(f"{chosen_label} is not available. Please return to Cleaning (Tab 2).")
+            st.error(f"{chosen_name} is not available. Please return to Cleaning (Tab 2).")
         else:
-            st.subheader(f"{chosen_label} — quick overview")
+            st.subheader(f"{chosen_name} — quick overview")
             st.write(f"Rows × Columns: **{df.shape[0]} × {df.shape[1]}**")
             st.write("Columns:", list(df.columns))
 
@@ -252,36 +255,20 @@ with tab3:
             numeric_cols = df.select_dtypes(include=["number"]).columns.tolist()
             cat_cols = df.select_dtypes(include=["object", "category"]).columns.tolist()
 
-            # Numeric summary and plots
+            # Numeric summary
             if numeric_cols:
                 st.subheader("Numeric summary")
                 st.dataframe(df[numeric_cols].describe().T)
-
-                # Option to pick columns to plot
-                plot_num = st.multiselect("Numeric columns to plot histograms", numeric_cols, default=numeric_cols[:3])
-                for col in plot_num:
-                    st.write(f"Histogram — {col}")
-                    fig = px.histogram(df, x=col)
-                    st.plotly_chart(fig, use_container_width=True)
-
-                # Correlation heatmap (only if at least 2 numeric columns)
-                if len(numeric_cols) >= 2:
-                    st.subheader("Correlation (Pearson)")
-                    corr = df[numeric_cols].corr()
-                    fig_corr = px.imshow(corr, text_auto=True)
-                    st.plotly_chart(fig_corr, use_container_width=True)
             else:
                 st.info("No numeric columns found.")
 
-            # Categorical summary
+            # Categorical summary + inspector
             if cat_cols:
                 st.subheader("Categorical columns (value counts)")
                 sel_cat = st.selectbox("Choose a categorical column to inspect", options=cat_cols)
                 vc = df[sel_cat].value_counts(dropna=False)
                 st.dataframe(vc)
-
-                # Small frequency plot
-                if vc.shape[0] <= 50:  # avoid huge plots
+                if vc.shape[0] <= 50:
                     fig_cat = px.bar(x=vc.index.astype(str), y=vc.values)
                     st.plotly_chart(fig_cat, use_container_width=True)
                 else:
@@ -289,12 +276,12 @@ with tab3:
             else:
                 st.info("No categorical columns found.")
 
-            # Quick row-level inspection
+            # Row / column inspector
             st.subheader("Row / column inspector")
             col_to_view = st.selectbox("Pick a column to show first 10 values", options=list(df.columns))
             st.write(df[[col_to_view]].head(10))
 
-            # Option to download a small summary CSV
+            # Column summary download
             if st.button("Download column summary CSV"):
                 summary = []
                 for col in df.columns:
@@ -309,3 +296,133 @@ with tab3:
                 summary_df.to_csv(tolink, index=False)
                 tolink.seek(0)
                 st.download_button("Download summary.csv", data=tolink, file_name=f"{ds_key}_summary.csv")
+
+            # -----------------------
+            # Charts: choose then show (with options)
+            # -----------------------
+            st.subheader("Charts (choose then click Show chart)")
+            chart_options = [
+                "None",
+                "Histogram (single numeric)",
+                "Boxplot (single numeric)",
+                "Scatter (choose X and Y numeric)",
+                "Correlation heatmap (numeric columns)"
+            ]
+            chart_choice = st.selectbox("Choose a chart", options=chart_options, index=0)
+
+            # load previous chart settings for this dataset if present
+            last_key = f"{ds_key}_last_chart"
+            last_settings = st.session_state.get(last_key, {})
+
+            # chart-specific controls (only show relevant controls)
+            chart_params = {}
+            if chart_choice == "Histogram (single numeric)":
+                if not numeric_cols:
+                    st.info("No numeric columns to plot.")
+                else:
+                    default_num = last_settings.get("x_col", numeric_cols[0])
+                    x_col = st.selectbox("Numeric column (histogram)", options=numeric_cols, index=numeric_cols.index(default_num) if default_num in numeric_cols else 0)
+                    bins = st.number_input("Bins", min_value=5, max_value=500, value=last_settings.get("bins", 30), step=1)
+                    color_col = None
+                    if cat_cols:
+                        color_col = st.selectbox("Color by (optional categorical)", options=[None] + cat_cols, index=0)
+                    chart_params.update({"x_col": x_col, "bins": bins, "color_col": color_col})
+
+            elif chart_choice == "Boxplot (single numeric)":
+                if not numeric_cols:
+                    st.info("No numeric columns to plot.")
+                else:
+                    default_num = last_settings.get("y_col", numeric_cols[0])
+                    y_col = st.selectbox("Numeric column (boxplot)", options=numeric_cols, index=numeric_cols.index(default_num) if default_num in numeric_cols else 0)
+                    group_col = None
+                    if cat_cols:
+                        group_col = st.selectbox("Group by (optional categorical)", options=[None] + cat_cols, index=0)
+                    chart_params.update({"y_col": y_col, "group_col": group_col})
+
+            elif chart_choice == "Scatter (choose X and Y numeric)":
+                if len(numeric_cols) < 2:
+                    st.info("Need at least two numeric columns for a scatter plot.")
+                else:
+                    default_x = last_settings.get("x_col", numeric_cols[0])
+                    x_col = st.selectbox("X axis (numeric)", options=numeric_cols, index=numeric_cols.index(default_x) if default_x in numeric_cols else 0, key=f"{ds_key}_scatter_x")
+                    default_y = last_settings.get("y_col", numeric_cols[1] if len(numeric_cols) > 1 else numeric_cols[0])
+                    y_col = st.selectbox("Y axis (numeric)", options=[c for c in numeric_cols if c != x_col], index=0, key=f"{ds_key}_scatter_y")
+                    color_col = None
+                    if cat_cols:
+                        color_col = st.selectbox("Color by (optional categorical)", options=[None] + cat_cols, index=0)
+                    chart_params.update({"x_col": x_col, "y_col": y_col, "color_col": color_col})
+
+            elif chart_choice == "Correlation heatmap (numeric columns)":
+                # no extra controls, but show note
+                if len(numeric_cols) < 2:
+                    st.info("Need at least two numeric columns for correlation heatmap.")
+                else:
+                    chart_params.update({})
+
+            # Only render the chart when user clicks
+            if chart_choice != "None":
+                if st.button("Show chart"):
+                    # render chart according to params
+                    fig = None
+                    try:
+                        if chart_choice == "Histogram (single numeric)":
+                            x_col = chart_params.get("x_col")
+                            bins = chart_params.get("bins", 30)
+                            color_col = chart_params.get("color_col")
+                            if color_col:
+                                fig = px.histogram(df, x=x_col, color=color_col, nbins=bins)
+                            else:
+                                fig = px.histogram(df, x=x_col, nbins=bins)
+
+                        elif chart_choice == "Boxplot (single numeric)":
+                            y_col = chart_params.get("y_col")
+                            group_col = chart_params.get("group_col")
+                            if group_col:
+                                fig = px.box(df, x=group_col, y=y_col)
+                            else:
+                                fig = px.box(df, y=y_col)
+
+                        elif chart_choice == "Scatter (choose X and Y numeric)":
+                            x_col = chart_params.get("x_col")
+                            y_col = chart_params.get("y_col")
+                            color_col = chart_params.get("color_col")
+                            if color_col:
+                                fig = px.scatter(df, x=x_col, y=y_col, color=df[color_col].astype(str))
+                            else:
+                                fig = px.scatter(df, x=x_col, y=y_col)
+
+                        elif chart_choice == "Correlation heatmap (numeric columns)":
+                            corr = df[numeric_cols].corr()
+                            fig = px.imshow(corr, text_auto=True)
+
+                        # show figure
+                        if fig:
+                            st.plotly_chart(fig, use_container_width=True)
+                        else:
+                            st.info("Could not create chart with the selected options.")
+                    except Exception as e:
+                        st.error(f"Error rendering chart: {e}")
+
+                    # Save the "last settings" for this dataset
+                    st.session_state[last_key] = {"chart_choice": chart_choice, **chart_params}
+
+                    # Option to save chart config for PDF summary
+                    st.markdown("**Save this chart to include in the PDF summary**")
+                    caption = st.text_input("Optional short caption for PDF (appears under chart)", value=last_settings.get("caption", ""))
+                    if st.button("Save chart to PDF"):
+                        saved = {
+                            "ds_key": ds_key,
+                            "ds_name": chosen_name,
+                            "chart_type": chart_choice,
+                            "params": chart_params,
+                            "caption": caption,
+                            "time": datetime.utcnow().isoformat()
+                        }
+                        st.session_state["saved_charts"].append(saved)
+                        st.success("Chart saved for PDF summary")
+
+            # show list of saved charts (brief)
+            if st.session_state["saved_charts"]:
+                st.subheader("Charts queued for PDF summary")
+                for i, c in enumerate(st.session_state["saved_charts"], 1):
+                    st.write(f"{i}. {c['ds_name']} — {c['chart_type']} — caption: {c.get('caption','(none)')}")
