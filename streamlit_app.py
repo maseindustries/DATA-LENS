@@ -429,6 +429,8 @@ with tab3:
                     if c.get("caption"):
                         st.caption(c["caption"])
 
-            if queue:
-                if st.button("Clear PDF queue"):
-                    st.session_state["saved_cha_]()_
+           if queue:
+    if st.button("Clear PDF queue"):
+        st.session_state["saved_charts"] = []
+        st.success("PDF queue cleared")
+
