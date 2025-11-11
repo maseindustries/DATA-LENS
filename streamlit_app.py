@@ -211,53 +211,101 @@ with tab2:
 with tab3:
     st.header("Exploratory Data Analysis (EDA)")
 
-    # Define datasets
+    # Datasets to consider
     datasets = [
         ("cleaned_a", "Dataset A"),
         ("cleaned_b", "Dataset B")
     ]
 
-    # Check if any cleaned dataset exists
-    if not any(st.session_state.get(f"{ds_name}_saved") for ds_name, _ in datasets):
-        st.warning("Please clean at least one dataset in Tab 2 before running EDA.")
+    # Check if any dataset is available (prefer _saved flags if present)
+    any_saved = any(st.session_state.get(f"{ds_name}_saved") or isinstance(st.session_state.get(ds_name), pd.DataFrame)
+                    for ds_name, _ in datasets)
+    if not any_saved:
+        st.warning("Please upload & clean at least one dataset in Tabs 1–2 before running EDA.")
     else:
-        for ds_name, label in datasets:
-            df = st.session_state.get(ds_name)
-            if df is not None and isinstance(df, pd.DataFrame):
-                st.subheader(f"{label} Overview")
-                
-                # Shape
-                st.write(f"Shape: {df.shape[0]} rows × {df.shape[1]} columns")
-                
-                # Columns
-                st.write("Columns:", list(df.columns))
-                
-                # Missing values
-                missing = df.isna().sum()
-                if missing.sum() > 0:
-                    st.write("Missing values per column:")
-                    st.dataframe(missing[missing > 0])
-                else:
-                    st.info("No missing values detected.")
-                
-                # Numeric summary
-                numeric_cols = df.select_dtypes(include=['number']).columns
-                if len(numeric_cols) > 0:
-                    st.write("Numeric columns summary:")
-                    st.dataframe(df[numeric_cols].describe())
-                    
-                    # Optional plot
-                    for col in numeric_cols:
-                        st.write(f"Histogram for {col}")
-                        fig = px.histogram(df, x=col)
-                        st.plotly_chart(fig, use_container_width=True)
-                
-                # Categorical summary
-                cat_cols = df.select_dtypes(include=['object']).columns
-                if len(cat_cols) > 0:
-                    st.write("Categorical columns summary:")
-                    for col in cat_cols:
-                        st.write(f"Value counts for {col}")
-                        st.dataframe(df[col].value_counts())
+        # Let user choose which dataset to inspect
+        available = [label for ds_name, label in datasets
+                     if isinstance(st.session_state.get(ds_name), pd.DataFrame)]
+        chosen_label = st.selectbox("Choose dataset for EDA", options=available)
+
+        # Map back to session_state key
+        ds_key = "cleaned_a" if chosen_label == "Dataset A" else "cleaned_b"
+        df = st.session_state.get(ds_key)
+
+        # Extra safety check
+        if df is None or not isinstance(df, pd.DataFrame):
+            st.error(f"{chosen_label} is not available. Please return to Cleaning (Tab 2).")
+        else:
+            st.subheader(f"{chosen_label} — quick overview")
+            st.write(f"Rows × Columns: **{df.shape[0]} × {df.shape[1]}**")
+            st.write("Columns:", list(df.columns))
+
+            # Missing values
+            missing = df.isna().sum()
+            if missing.sum() > 0:
+                st.subheader("Missing values")
+                st.dataframe(missing[missing > 0].sort_values(ascending=False))
             else:
-                st.info(f"{label} is not available for EDA.")
+                st.info("No missing values detected.")
+
+            # Column type separation (safe)
+            numeric_cols = df.select_dtypes(include=["number"]).columns.tolist()
+            cat_cols = df.select_dtypes(include=["object", "category"]).columns.tolist()
+
+            # Numeric summary and plots
+            if numeric_cols:
+                st.subheader("Numeric summary")
+                st.dataframe(df[numeric_cols].describe().T)
+
+                # Option to pick columns to plot
+                plot_num = st.multiselect("Numeric columns to plot histograms", numeric_cols, default=numeric_cols[:3])
+                for col in plot_num:
+                    st.write(f"Histogram — {col}")
+                    fig = px.histogram(df, x=col)
+                    st.plotly_chart(fig, use_container_width=True)
+
+                # Correlation heatmap (only if at least 2 numeric columns)
+                if len(numeric_cols) >= 2:
+                    st.subheader("Correlation (Pearson)")
+                    corr = df[numeric_cols].corr()
+                    fig_corr = px.imshow(corr, text_auto=True)
+                    st.plotly_chart(fig_corr, use_container_width=True)
+            else:
+                st.info("No numeric columns found.")
+
+            # Categorical summary
+            if cat_cols:
+                st.subheader("Categorical columns (value counts)")
+                sel_cat = st.selectbox("Choose a categorical column to inspect", options=cat_cols)
+                vc = df[sel_cat].value_counts(dropna=False)
+                st.dataframe(vc)
+
+                # Small frequency plot
+                if vc.shape[0] <= 50:  # avoid huge plots
+                    fig_cat = px.bar(x=vc.index.astype(str), y=vc.values)
+                    st.plotly_chart(fig_cat, use_container_width=True)
+                else:
+                    st.info("Too many unique categories to plot; showing table only.")
+            else:
+                st.info("No categorical columns found.")
+
+            # Quick row-level inspection
+            st.subheader("Row / column inspector")
+            col_to_view = st.selectbox("Pick a column to show first 10 values", options=list(df.columns))
+            st.write(df[[col_to_view]].head(10))
+
+            # Option to download a small summary CSV
+            if st.button("Download column summary CSV"):
+                summary = []
+                for col in df.columns:
+                    summary.append({
+                        "column": col,
+                        "dtype": str(df[col].dtype),
+                        "n_unique": int(df[col].nunique(dropna=True)),
+                        "n_missing": int(df[col].isna().sum())
+                    })
+                summary_df = pd.DataFrame(summary)
+                tolink = io.BytesIO()
+                summary_df.to_csv(tolink, index=False)
+                tolink.seek(0)
+                st.download_button("Download summary.csv", data=tolink, file_name=f"{ds_key}_summary.csv")
