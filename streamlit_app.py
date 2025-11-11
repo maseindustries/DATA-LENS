@@ -475,7 +475,7 @@ with tab4:
             st.info("Select at least one key column to perform row-level comparisons.")
     st.markdown("---")
     # -----------------------------
-# Tab 5: PDF Summary (CEO-ready)
+# Tab 5: CEO-Ready PDF Summary
 # -----------------------------
 with tab5:
     st.header("PDF Summary Report")
@@ -484,7 +484,6 @@ with tab5:
     cleaned_b = st.session_state.get("cleaned_b")
     name_a = st.session_state.get("cleaned_a_name", "Dataset A")
     name_b = st.session_state.get("cleaned_b_name", "Dataset B")
-
     saved_charts = st.session_state.get("saved_charts", [])
 
     if cleaned_a is None and cleaned_b is None:
@@ -494,6 +493,7 @@ with tab5:
         notes = st.text_area("Optional notes / observations for the report", value="")
 
         if st.button("Generate CEO-Ready PDF Summary"):
+
             pdf = FPDF()
             pdf.set_auto_page_break(auto=True, margin=15)
 
@@ -535,8 +535,7 @@ with tab5:
 
             # ------------------ Charts Section ------------------
             if saved_charts:
-                for chart in saved_charts:
-                    # Attempt to add Plotly chart images
+                for i, chart in enumerate(saved_charts, 1):
                     try:
                         fig = chart.get("figure")
                         caption = chart.get("caption", "")
@@ -565,14 +564,12 @@ with tab5:
                     pdf.set_font("Arial", "", 12)
                     pdf.ln(5)
 
-                    # Shared / Unique columns
-                    pdf.cell(0, 8, f"Shared Columns ({len(set(cleaned_a.columns) & set(cleaned_b.columns))}): "
-                                    f"{', '.join(set(cleaned_a.columns) & set(cleaned_b.columns))}", ln=True)
+                    shared_cols = set(cleaned_a.columns) & set(cleaned_b.columns)
+                    pdf.cell(0, 8, f"Shared Columns ({len(shared_cols)}): {', '.join(shared_cols)}", ln=True)
                     pdf.cell(0, 8, f"Unique to {name_a}: {', '.join(report['only_cols_a']) if report['only_cols_a'] else 'None'}", ln=True)
                     pdf.cell(0, 8, f"Unique to {name_b}: {', '.join(report['only_cols_b']) if report['only_cols_b'] else 'None'}", ln=True)
                     pdf.ln(5)
 
-                    # Numeric differences
                     if report.get("numeric_comparison"):
                         pdf.cell(0, 8, "Numeric Differences (shared columns):", ln=True)
                         for col in report["numeric_comparison"]:
@@ -581,18 +578,22 @@ with tab5:
                             pdf.cell(0, 8, f"{col} | {name_a} mean: {mean_a:.2f}, {name_b} mean: {mean_b:.2f}, diff: {mean_b - mean_a:.2f}", ln=True)
                         pdf.ln(5)
 
-                    # Quick actionables
+                    # Actionable insights (top 5 numeric differences)
                     pdf.set_font("Arial", "B", 12)
                     pdf.cell(0, 8, "Key Insights & Recommendations:", ln=True)
                     pdf.set_font("Arial", "", 12)
-                    for col in report.get("numeric_comparison", [])[:5]:  # top 5 differences
+                    for col in report.get("numeric_comparison", [])[:5]:
                         mean_a = cleaned_a[col].mean()
                         mean_b = cleaned_b[col].mean()
                         diff = mean_b - mean_a
                         pdf.cell(0, 8, f"- Check '{col}': mean difference = {diff:.2f}", ln=True)
 
             # ------------------ Output PDF ------------------
-            pdf_buffer = io.BytesIO()
-            pdf.output(pdf_buffer)
-            pdf_buffer.seek(0)
-            st.download_button("Download CEO-Ready PDF", data=pdf_buffer, file_name="data_summary_ceo.pdf")
+            pdf_bytes = pdf.output(dest='S').encode('latin1')
+            st.download_button(
+                "Download CEO-Ready PDF",
+                data=pdf_bytes,
+                file_name="data_summary_ceo.pdf",
+                mime="application/pdf"
+            )
+    
