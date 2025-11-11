@@ -503,21 +503,75 @@ with tab4:
         }
         st.success("Compare completed and saved for export/PDF.")
 # ------------------ Tab 5 ------------------
+with tab5:
+    st.header("Export Data & Summaries")
 
-    if not summary_any:
-        st.info("No datasets available for column summaries.")
+    # --- Cleaned Dataset Exports ---
+    st.subheader("Cleaned Datasets")
+    cleaned_a = st.session_state.get("cleaned_a")
+    name_a = st.session_state.get("cleaned_a_name", "Dataset A")
+    cleaned_b = st.session_state.get("cleaned_b")
+    name_b = st.session_state.get("cleaned_b_name", "Dataset B")
+
+    if isinstance(cleaned_a, pd.DataFrame):
+        st.write(f"**{name_a}** ({cleaned_a.shape[0]} rows x {cleaned_a.shape[1]} cols)")
+        buf_csv = io.BytesIO()
+        cleaned_a.to_csv(buf_csv, index=False)
+        buf_csv.seek(0)
+        st.download_button(f"Download {name_a} as CSV", data=buf_csv, file_name=f"{name_a}.csv")
+    else:
+        st.info(f"{name_a} is not available. Upload and clean in Tabs 1–2.")
+
+    if isinstance(cleaned_b, pd.DataFrame):
+        st.write(f"**{name_b}** ({cleaned_b.shape[0]} rows x {cleaned_b.shape[1]} cols)")
+        buf_csv = io.BytesIO()
+        cleaned_b.to_csv(buf_csv, index=False)
+        buf_csv.seek(0)
+        st.download_button(f"Download {name_b} as CSV", data=buf_csv, file_name=f"{name_b}.csv")
+    else:
+        st.info(f"{name_b} is not available. Upload and clean in Tabs 1–2.")
 
     st.markdown("---")
 
-    # --- Compare & Contrast Report ---
+    # --- Column Summaries ---
+    st.subheader("Column Summaries")
+    if isinstance(cleaned_a, pd.DataFrame):
+        summary_a = pd.DataFrame({
+            "column": cleaned_a.columns,
+            "dtype": [str(cleaned_a[c].dtype) for c in cleaned_a.columns],
+            "n_unique": [cleaned_a[c].nunique(dropna=True) for c in cleaned_a.columns],
+            "n_missing": [cleaned_a[c].isna().sum() for c in cleaned_a.columns]
+        })
+        buf = io.BytesIO()
+        summary_a.to_csv(buf, index=False)
+        buf.seek(0)
+        st.download_button(f"Download {name_a} column summary", data=buf, file_name=f"{name_a}_column_summary.csv")
+    else:
+        st.info(f"No column summary available for {name_a}.")
+
+    if isinstance(cleaned_b, pd.DataFrame):
+        summary_b = pd.DataFrame({
+            "column": cleaned_b.columns,
+            "dtype": [str(cleaned_b[c].dtype) for c in cleaned_b.columns],
+            "n_unique": [cleaned_b[c].nunique(dropna=True) for c in cleaned_b.columns],
+            "n_missing": [cleaned_b[c].isna().sum() for c in cleaned_b.columns]
+        })
+        buf = io.BytesIO()
+        summary_b.to_csv(buf, index=False)
+        buf.seek(0)
+        st.download_button(f"Download {name_b} column summary", data=buf, file_name=f"{name_b}_column_summary.csv")
+    else:
+        st.info(f"No column summary available for {name_b}.")
+
+    st.markdown("---")
+
+    # --- Compare Report ---
     st.subheader("Compare & Contrast Report")
     compare_report = st.session_state.get("compare_report")
     if compare_report:
         st.write(f"Comparing **{compare_report['name_a']}** and **{compare_report['name_b']}**")
-
         buf_excel = io.BytesIO()
         with pd.ExcelWriter(buf_excel, engine='xlsxwriter') as writer:
-            # Only export if datasets exist
             A = st.session_state.get("cleaned_a")
             B = st.session_state.get("cleaned_b")
             keys = compare_report.get("selected_keys", [])
@@ -542,32 +596,6 @@ with tab4:
         buf_excel.seek(0)
         st.download_button("Download Compare Report (Excel)", data=buf_excel, file_name="compare_report.xlsx")
     else:
-        st.info("No comparison report available. Complete Compare & Contrast (Tab 4) first.")
-# --- Temporary dummy data for testing Tab 5 ---
-if st.session_state.get("cleaned_a") is None:
-    st.session_state.cleaned_a = pd.DataFrame({
-        "id": [1, 2, 3],
-        "value": [10, 20, 30],
-        "category": ["A", "B", "C"]
-    })
-    st.session_state.cleaned_a_name = "Dataset A"
+        st.info("No comparison report available. Complete Compare & Contrast in Tab 4 first.")
 
-if st.session_state.get("cleaned_b") is None:
-    st.session_state.cleaned_b = pd.DataFrame({
-        "id": [2, 3, 4],
-        "value": [20, 30, 40],
-        "category": ["B", "C", "D"]
-    })
-    st.session_state.cleaned_b_name = "Dataset B"
-
-if st.session_state.get("compare_report") is None:
-    st.session_state.compare_report = {
-        "name_a": "Dataset A",
-        "name_b": "Dataset B",
-        "selected_keys": ["id"],
-        "counts": {"only_a": 1, "only_b": 1, "both": 2},
-        "only_cols_a": [],
-        "only_cols_b": [],
-        "numeric_comparison": ["value"],
-        "timestamp": datetime.utcnow().isoformat()
-    }
+ 
