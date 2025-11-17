@@ -1224,4 +1224,3 @@ with tab5:
             pdf.output(pdf_buffer)
             pdf_buffer.seek(0)
             st.download_button("Download PDF Summary", data=pdf_buffer, file_name="data_summary.pdf")
-            
